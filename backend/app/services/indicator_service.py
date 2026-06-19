@@ -1,6 +1,5 @@
 import pandas as pd
-import pandas_ta as ta
-from decimal import Decimal
+import ta
 from typing import Optional
 import logging
 
@@ -84,7 +83,7 @@ def evaluate_condition(df: pd.DataFrame, condition: dict) -> bool:
 
     if indicator == "RSI":
         period = params.get("period", 14)
-        rsi = ta.rsi(close, length=period)
+        rsi = ta.momentum.RSIIndicator(close=close, window=period).rsi()
         if rsi is None or rsi.empty:
             return False
         latest = float(rsi.iloc[-1])
@@ -94,16 +93,12 @@ def evaluate_condition(df: pd.DataFrame, condition: dict) -> bool:
         fast = params.get("fast", 12)
         slow = params.get("slow", 26)
         signal_period = params.get("signal", 9)
-        macd_df = ta.macd(close, fast=fast, slow=slow, signal=signal_period)
-        if macd_df is None or macd_df.empty:
-            return False
-        hist_col = [c for c in macd_df.columns if "MACDh" in c]
-        macd_col = [c for c in macd_df.columns if c.startswith("MACD_")]
-        sig_col = [c for c in macd_df.columns if "MACDs" in c]
+        macd_obj = ta.trend.MACD(close=close, window_slow=slow, window_fast=fast, window_sign=signal_period)
+        macd_line = macd_obj.macd()
+        sig_line = macd_obj.macd_signal()
+        hist = macd_obj.macd_diff()
 
-        if operator in ("cross_above", "cross_below") and macd_col and sig_col:
-            macd_line = macd_df[macd_col[0]]
-            sig_line = macd_df[sig_col[0]]
+        if operator in ("cross_above", "cross_below"):
             if len(macd_line) < 2:
                 return False
             if operator == "cross_above":
@@ -111,14 +106,12 @@ def evaluate_condition(df: pd.DataFrame, condition: dict) -> bool:
             else:
                 return (macd_line.iloc[-2] > sig_line.iloc[-2]) and (macd_line.iloc[-1] < sig_line.iloc[-1])
 
-        if hist_col:
-            latest_hist = float(macd_df[hist_col[0]].iloc[-1])
-            return _compare(latest_hist, operator, value)
-        return False
+        latest_hist = float(hist.iloc[-1])
+        return _compare(latest_hist, operator, value)
 
     elif indicator == "EMA":
         period = params.get("period", 20)
-        ema = ta.ema(close, length=period)
+        ema = ta.trend.EMAIndicator(close=close, window=period).ema_indicator()
         if ema is None or ema.empty:
             return False
         latest_ema = float(ema.iloc[-1])
@@ -131,7 +124,7 @@ def evaluate_condition(df: pd.DataFrame, condition: dict) -> bool:
 
     elif indicator == "SMA":
         period = params.get("period", 50)
-        sma = ta.sma(close, length=period)
+        sma = ta.trend.SMAIndicator(close=close, window=period).sma_indicator()
         if sma is None or sma.empty:
             return False
         latest_sma = float(sma.iloc[-1])
@@ -145,11 +138,9 @@ def evaluate_condition(df: pd.DataFrame, condition: dict) -> bool:
     elif indicator == "BB":
         period = params.get("period", 20)
         std = params.get("std", 2.0)
-        bb = ta.bbands(close, length=period, std=std)
-        if bb is None or bb.empty:
-            return False
-        upper = float(bb.iloc[-1, 0])
-        lower = float(bb.iloc[-1, 2])
+        bb = ta.volatility.BollingerBands(close=close, window=period, window_dev=std)
+        upper = float(bb.bollinger_hband().iloc[-1])
+        lower = float(bb.bollinger_lband().iloc[-1])
         latest_price = float(close.iloc[-1])
         if operator == "price_above_upper":
             return latest_price > upper
@@ -162,13 +153,11 @@ def evaluate_condition(df: pd.DataFrame, condition: dict) -> bool:
     elif indicator == "STOCH":
         k_period = params.get("k", 14)
         d_period = params.get("d", 3)
-        stoch = ta.stoch(high, low, close, k=k_period, d=d_period)
-        if stoch is None or stoch.empty:
+        stoch = ta.momentum.StochasticOscillator(high=high, low=low, close=close, window=k_period, smooth_window=d_period)
+        k_line = stoch.stoch()
+        if k_line is None or k_line.empty:
             return False
-        k_col = [c for c in stoch.columns if "STOCHk" in c]
-        if not k_col:
-            return False
-        latest_k = float(stoch[k_col[0]].iloc[-1])
+        latest_k = float(k_line.iloc[-1])
         return _compare(latest_k, operator, value)
 
     logger.warning(f"Unknown indicator: {indicator}")
@@ -190,7 +179,7 @@ def evaluate_conditions(df: pd.DataFrame, conditions: list, logic_operator: str 
 
     if logic_operator == "AND":
         return all(results)
-    else:  # OR
+    else:
         return any(results)
 
 
