@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, forwardRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -62,25 +62,29 @@ function FormField({ label, error, children, hint }: {
   )
 }
 
-function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
+const Input = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
+  ({ className, ...props }, ref) => (
     <input
+      ref={ref}
       className={cn('w-full px-3 py-2 bg-input border border-border rounded-lg text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary', className)}
       {...props}
     />
   )
-}
+)
+Input.displayName = 'Input'
 
-function Select({ children, className, ...props }: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return (
+const Select = forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<HTMLSelectElement>>(
+  ({ children, className, ...props }, ref) => (
     <select
+      ref={ref}
       className={cn('w-full px-3 py-2 bg-input border border-border rounded-lg text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary', className)}
       {...props}
     >
       {children}
     </select>
   )
-}
+)
+Select.displayName = 'Select'
 
 export default function CreateBotPage() {
   const { t } = useTranslation()
