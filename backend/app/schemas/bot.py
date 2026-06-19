@@ -9,6 +9,7 @@ class SafetyOrderPreview(BaseModel):
     price: Decimal
     size_quote: Decimal
     deviation_pct: Decimal
+    cumulative_deviation_pct: Decimal
     total_quote: Decimal
     avg_price: Decimal
     required_change_pct: Decimal

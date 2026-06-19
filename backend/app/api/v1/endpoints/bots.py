@@ -280,8 +280,9 @@ async def get_safety_preview(
 ):
     bot = await _get_user_bot(db, bot_id, current_user.id)
 
-    # Get current price
+    # Get current price — use the bot's key if present, otherwise a public client
     current_price = None
+    api_key = api_secret = ""
     if bot.exchange_key_id:
         ek = await db.execute(
             select(ExchangeKey).where(ExchangeKey.id == bot.exchange_key_id)
@@ -290,11 +291,11 @@ async def get_safety_preview(
         if key:
             api_key = decrypt_api_key(key.api_key_enc)
             api_secret = decrypt_api_key(key.api_secret_enc)
-            client = BinanceSpotClient(api_key, api_secret)
-            try:
-                current_price = await client.get_ticker_price(bot.pair)
-            except Exception:
-                pass
+    try:
+        client = BinanceSpotClient(api_key, api_secret)
+        current_price = await client.get_ticker_price(bot.pair)
+    except Exception:
+        pass
 
     base_price = current_price or Decimal("100")
 
@@ -315,6 +316,7 @@ async def get_safety_preview(
             price=l.price,
             size_quote=l.size_quote,
             deviation_pct=l.deviation_pct,
+            cumulative_deviation_pct=l.cumulative_deviation_pct,
             total_quote=l.total_quote,
             avg_price=l.avg_price,
             required_change_pct=l.required_change_pct,
