@@ -205,6 +205,20 @@ export default function CreateBotPage() {
     createMut.mutate(data)
   }
 
+  const onInvalid = () => {
+    toast.error('Lütfen eksik / hatalı alanları doldurun')
+  }
+
+  // numeric register that accepts both comma and dot decimals (TR locale)
+  const num = (name: keyof FormData) =>
+    register(name as any, {
+      setValueAs: (v) => {
+        if (v === '' || v === null || v === undefined) return undefined
+        const n = parseFloat(String(v).replace(',', '.'))
+        return isNaN(n) ? undefined : n
+      },
+    })
+
   const e = (field: keyof FormData) => errors[field]?.message as string | undefined
 
   const refPriceNum = parseFloat(refPrice) || 100
@@ -234,7 +248,7 @@ export default function CreateBotPage() {
         <span className="text-foreground">{t('bots.create')}</span>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)}>
+      <form onSubmit={handleSubmit(onSubmit, onInvalid)}>
         <div className="grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-6 items-start">
 
           {/* ── Left column: parameters ── */}
@@ -273,8 +287,8 @@ export default function CreateBotPage() {
               <Field label="İlk Alım Miktarı" error={e('base_order_size')} hint="İşlem açılışında kullanılacak başlangıç yatırım miktarı">
                 <InputGroup suffix="USDT">
                   <Input
-                    type="number" step="0.01" min="0"
-                    {...register('base_order_size', { valueAsNumber: true })}
+                    type="text" inputMode="decimal"
+                    {...num('base_order_size')}
                     placeholder="100"
                     className="rounded-r-none"
                   />
@@ -287,16 +301,16 @@ export default function CreateBotPage() {
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Maks. SO Sayısı" error={e('max_safety_orders')} hint="0–25">
                   <Input
-                    type="number" min="0" max="25"
-                    {...register('max_safety_orders', { valueAsNumber: true })}
+                    type="text" inputMode="numeric"
+                    {...num('max_safety_orders')}
                     placeholder="5"
                   />
                 </Field>
                 <Field label="SO Miktarı" error={e('safety_order_size')} hint="İlk SO büyüklüğü">
                   <InputGroup suffix="USDT">
                     <Input
-                      type="number" step="0.01" min="0"
-                      {...register('safety_order_size', { valueAsNumber: true })}
+                      type="text" inputMode="decimal"
+                      {...num('safety_order_size')}
                       placeholder="50"
                       className="rounded-r-none"
                     />
@@ -307,8 +321,8 @@ export default function CreateBotPage() {
               <Field label="İlk SO Fiyat Sapması" error={e('safety_order_step_pct')} hint="Base order fiyatından ilk SO'ya kadar düşüş yüzdesi">
                 <InputGroup suffix="%">
                   <Input
-                    type="number" step="0.1" min="0.1"
-                    {...register('safety_order_step_pct', { valueAsNumber: true })}
+                    type="text" inputMode="decimal"
+                    {...num('safety_order_step_pct')}
                     placeholder="2.0"
                     className="rounded-r-none"
                   />
@@ -319,8 +333,8 @@ export default function CreateBotPage() {
                 <Field label="Volume Scale" error={e('safety_order_volume_scale')} hint="Her SO öncekinin kaç katı büyüklükte">
                   <InputGroup suffix="×">
                     <Input
-                      type="number" step="0.1" min="1"
-                      {...register('safety_order_volume_scale', { valueAsNumber: true })}
+                      type="text" inputMode="decimal"
+                      {...num('safety_order_volume_scale')}
                       placeholder="1.5"
                       className="rounded-r-none"
                     />
@@ -329,8 +343,8 @@ export default function CreateBotPage() {
                 <Field label="Step Scale" error={e('safety_order_step_scale')} hint="Her SO aralığı öncekinin kaç katı">
                   <InputGroup suffix="×">
                     <Input
-                      type="number" step="0.1" min="1"
-                      {...register('safety_order_step_scale', { valueAsNumber: true })}
+                      type="text" inputMode="decimal"
+                      {...num('safety_order_step_scale')}
                       placeholder="1.0"
                       className="rounded-r-none"
                     />
@@ -351,8 +365,8 @@ export default function CreateBotPage() {
                 <Field label="Take Profit" error={e('take_profit_pct')}>
                   <InputGroup suffix="%">
                     <Input
-                      type="number" step="0.1" min="0.1"
-                      {...register('take_profit_pct', { valueAsNumber: true })}
+                      type="text" inputMode="decimal"
+                      {...num('take_profit_pct')}
                       placeholder="2.0"
                       className="rounded-r-none"
                     />
@@ -364,8 +378,8 @@ export default function CreateBotPage() {
                 <Field label="Trailing Deviation" error={e('trailing_deviation_pct')} hint="Zirve fiyattan ne kadar geri çekilince satılsın">
                   <InputGroup suffix="%">
                     <Input
-                      type="number" step="0.1" min="0.1"
-                      {...register('trailing_deviation_pct', { valueAsNumber: true })}
+                      type="text" inputMode="decimal"
+                      {...num('trailing_deviation_pct')}
                       placeholder="0.5"
                       className="rounded-r-none"
                     />
@@ -382,8 +396,8 @@ export default function CreateBotPage() {
                   <Field label="Stop Loss" error={e('stop_loss_pct')} hint="Ort. maliyetten bu kadar düşünce pozisyon kapatılır">
                     <InputGroup suffix="%">
                       <Input
-                        type="number" step="0.1" min="0.1"
-                        {...register('stop_loss_pct', { valueAsNumber: true })}
+                        type="text" inputMode="decimal"
+                        {...num('stop_loss_pct')}
                         placeholder="5.0"
                         className="rounded-r-none"
                       />
