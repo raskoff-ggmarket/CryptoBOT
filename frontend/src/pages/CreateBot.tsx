@@ -11,18 +11,18 @@ import { ChevronRight, ChevronLeft, Check } from 'lucide-react'
 import { cn } from '@/utils/cn'
 
 const schema = z.object({
-  name: z.string().min(1),
+  name: z.string().min(1, 'Bot adı zorunlu'),
   exchange_key_id: z.number().optional(),
-  pair: z.string().min(3),
+  pair: z.string().min(3, 'Parite zorunlu'),
   is_paper: z.boolean().default(false),
-  base_order_size: z.number().positive(),
+  base_order_size: z.number({ invalid_type_error: 'Sayı girin' }).positive('Pozitif olmalı'),
   max_safety_orders: z.number().int().min(0).max(25).default(5),
-  safety_order_size: z.number().positive(),
-  safety_order_step_pct: z.number().positive(),
+  safety_order_size: z.number({ invalid_type_error: 'Sayı girin' }).positive('Pozitif olmalı'),
+  safety_order_step_pct: z.number({ invalid_type_error: 'Sayı girin' }).positive('Pozitif olmalı'),
   safety_order_volume_scale: z.number().min(1).default(1.5),
   safety_order_step_scale: z.number().min(1).default(1.0),
   take_profit_type: z.enum(['fixed', 'trailing']).default('fixed'),
-  take_profit_pct: z.number().positive(),
+  take_profit_pct: z.number({ invalid_type_error: 'Sayı girin' }).positive('Pozitif olmalı'),
   trailing_deviation_pct: z.number().positive().default(0.5),
   stop_loss_enabled: z.boolean().default(false),
   stop_loss_pct: z.number().positive().optional(),
@@ -40,11 +40,20 @@ const STEPS = [
   'Gelişmiş',
 ]
 
-function FormField({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
+const STEP_FIELDS: Record<number, (keyof FormData)[]> = {
+  0: ['name', 'pair'],
+  1: ['base_order_size'],
+  2: ['max_safety_orders', 'safety_order_size', 'safety_order_step_pct', 'safety_order_volume_scale', 'safety_order_step_scale'],
+  3: ['take_profit_type', 'take_profit_pct'],
+  4: ['start_condition', 'reinvest_pct'],
+}
+
+function FormField({ label, error, children, hint }: { label: string; error?: string; children: React.ReactNode; hint?: string }) {
   return (
     <div>
       <label className="block text-sm font-medium text-foreground mb-1.5">{label}</label>
       {children}
+      {hint && !error && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
       {error && <p className="text-destructive text-xs mt-1">{error}</p>}
     </div>
   )
@@ -81,7 +90,7 @@ export default function CreateBotPage() {
   })
   const keys = keysData?.data?.data || []
 
-  const { register, handleSubmit, watch, formState: { errors }, getValues } = useForm<FormData>({
+  const { register, handleSubmit, watch, trigger, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
       is_paper: false,
@@ -108,7 +117,18 @@ export default function CreateBotPage() {
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Hata'),
   })
 
-  const onSubmit = (data: FormData) => createMut.mutate(data)
+  const handleNext = async () => {
+    const valid = await trigger(STEP_FIELDS[step])
+    if (valid) setStep(s => s + 1)
+  }
+
+  const onSubmit = (data: FormData) => {
+    // ensure exchange_key_id is undefined (not NaN) when not selected
+    if (!data.exchange_key_id || isNaN(data.exchange_key_id as number)) {
+      data.exchange_key_id = undefined
+    }
+    createMut.mutate(data)
+  }
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -153,8 +173,10 @@ export default function CreateBotPage() {
               </FormField>
 
               <FormField label="Exchange API Anahtarı">
-                <Select {...register('exchange_key_id', { valueAsNumber: true })}>
-                  <option value="">Anahtar seçin</option>
+                <Select {...register('exchange_key_id', {
+                  setValueAs: (v) => v === '' ? undefined : Number(v),
+                })}>
+                  <option value="">Anahtar seçin (Paper Trading için gerek yok)</option>
                   {keys.map((k: any) => (
                     <option key={k.id} value={k.id}>{k.label}</option>
                   ))}
@@ -175,7 +197,7 @@ export default function CreateBotPage() {
           {step === 1 && (
             <div className="space-y-4">
               <FormField label="Base Order Miktarı (USDT)" error={errors.base_order_size?.message}>
-                <Input type="number" step="0.01" {...register('base_order_size', { valueAsNumber: true })} placeholder="100" />
+                <Input type="number" step="0.01" min="0" {...register('base_order_size', { valueAsNumber: true })} placeholder="100" />
               </FormField>
 
               <div className="p-4 bg-accent/30 rounded-lg text-sm">
@@ -189,25 +211,23 @@ export default function CreateBotPage() {
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <FormField label="Maks. Safety Order Sayısı" error={errors.max_safety_orders?.message}>
-                  <Input type="number" {...register('max_safety_orders', { valueAsNumber: true })} />
+                  <Input type="number" min="0" max="25" {...register('max_safety_orders', { valueAsNumber: true })} />
                 </FormField>
                 <FormField label="SO Miktarı (USDT)" error={errors.safety_order_size?.message}>
-                  <Input type="number" step="0.01" {...register('safety_order_size', { valueAsNumber: true })} placeholder="50" />
+                  <Input type="number" step="0.01" min="0" {...register('safety_order_size', { valueAsNumber: true })} placeholder="50" />
                 </FormField>
               </div>
 
               <FormField label="Fiyat Sapma % (İlk SO)" error={errors.safety_order_step_pct?.message}>
-                <Input type="number" step="0.1" {...register('safety_order_step_pct', { valueAsNumber: true })} placeholder="2.0" />
+                <Input type="number" step="0.1" min="0" {...register('safety_order_step_pct', { valueAsNumber: true })} placeholder="2.0" />
               </FormField>
 
               <div className="grid grid-cols-2 gap-4">
-                <FormField label="Volume Scale" error={errors.safety_order_volume_scale?.message}>
-                  <Input type="number" step="0.1" {...register('safety_order_volume_scale', { valueAsNumber: true })} placeholder="1.5" />
-                  <p className="text-xs text-muted-foreground mt-1">Her SO miktarı öncekinin kaç katı</p>
+                <FormField label="Volume Scale" error={errors.safety_order_volume_scale?.message} hint="Her SO miktarı öncekinin kaç katı">
+                  <Input type="number" step="0.1" min="1" {...register('safety_order_volume_scale', { valueAsNumber: true })} placeholder="1.5" />
                 </FormField>
-                <FormField label="Step Scale" error={errors.safety_order_step_scale?.message}>
-                  <Input type="number" step="0.1" {...register('safety_order_step_scale', { valueAsNumber: true })} placeholder="1.0" />
-                  <p className="text-xs text-muted-foreground mt-1">Her SO aralığı öncekinin kaç katı</p>
+                <FormField label="Step Scale" error={errors.safety_order_step_scale?.message} hint="Her SO aralığı öncekinin kaç katı">
+                  <Input type="number" step="0.1" min="1" {...register('safety_order_step_scale', { valueAsNumber: true })} placeholder="1.0" />
                 </FormField>
               </div>
             </div>
@@ -224,13 +244,13 @@ export default function CreateBotPage() {
                   </Select>
                 </FormField>
                 <FormField label="Take Profit %" error={errors.take_profit_pct?.message}>
-                  <Input type="number" step="0.1" {...register('take_profit_pct', { valueAsNumber: true })} placeholder="2.0" />
+                  <Input type="number" step="0.1" min="0" {...register('take_profit_pct', { valueAsNumber: true })} placeholder="2.0" />
                 </FormField>
               </div>
 
               {tpType === 'trailing' && (
                 <FormField label="Trailing Deviation %" error={errors.trailing_deviation_pct?.message}>
-                  <Input type="number" step="0.1" {...register('trailing_deviation_pct', { valueAsNumber: true })} placeholder="0.5" />
+                  <Input type="number" step="0.1" min="0" {...register('trailing_deviation_pct', { valueAsNumber: true })} placeholder="0.5" />
                 </FormField>
               )}
 
@@ -241,11 +261,9 @@ export default function CreateBotPage() {
                 </div>
 
                 {stopLossEnabled && (
-                  <div className="space-y-4">
-                    <FormField label="Stop Loss %">
-                      <Input type="number" step="0.1" {...register('stop_loss_pct', { valueAsNumber: true })} placeholder="5.0" />
-                    </FormField>
-                  </div>
+                  <FormField label="Stop Loss %">
+                    <Input type="number" step="0.1" min="0" {...register('stop_loss_pct', { valueAsNumber: true })} placeholder="5.0" />
+                  </FormField>
                 )}
               </div>
             </div>
@@ -287,7 +305,7 @@ export default function CreateBotPage() {
             {step < STEPS.length - 1 ? (
               <button
                 type="button"
-                onClick={() => setStep(s => s + 1)}
+                onClick={handleNext}
                 className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 text-sm font-medium"
               >
                 {t('common.next')}
@@ -300,7 +318,7 @@ export default function CreateBotPage() {
                 className="flex items-center gap-2 px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 disabled:opacity-50 text-sm font-medium"
               >
                 <Check className="w-4 h-4" />
-                Bot Oluştur
+                {createMut.isPending ? 'Oluşturuluyor...' : 'Bot Oluştur'}
               </button>
             )}
           </div>
