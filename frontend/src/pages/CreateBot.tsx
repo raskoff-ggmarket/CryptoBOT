@@ -92,6 +92,7 @@ export default function CreateBotPage() {
 
   const { register, handleSubmit, watch, trigger, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
+    mode: 'onChange',
     defaultValues: {
       is_paper: false,
       max_safety_orders: 5,
