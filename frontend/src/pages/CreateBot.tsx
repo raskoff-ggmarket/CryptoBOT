@@ -11,18 +11,18 @@ import { ChevronRight, ChevronLeft, Check } from 'lucide-react'
 import { cn } from '@/utils/cn'
 
 const schema = z.object({
-  name: z.string().min(1, 'Bot adı zorunlu'),
+  name: z.string({ required_error: 'Bot adı zorunlu' }).min(1, 'Bot adı zorunlu'),
   exchange_key_id: z.number().optional(),
-  pair: z.string().min(3, 'Parite zorunlu'),
+  pair: z.string({ required_error: 'Parite zorunlu' }).min(3, 'En az 3 karakter'),
   is_paper: z.boolean().default(false),
-  base_order_size: z.number({ invalid_type_error: 'Sayı girin' }).positive('Pozitif olmalı'),
+  base_order_size: z.number({ required_error: 'Bu alan zorunlu', invalid_type_error: 'Geçerli bir sayı girin' }).positive('Sıfırdan büyük olmalı'),
   max_safety_orders: z.number().int().min(0).max(25).default(5),
-  safety_order_size: z.number({ invalid_type_error: 'Sayı girin' }).positive('Pozitif olmalı'),
-  safety_order_step_pct: z.number({ invalid_type_error: 'Sayı girin' }).positive('Pozitif olmalı'),
+  safety_order_size: z.number({ required_error: 'Bu alan zorunlu', invalid_type_error: 'Geçerli bir sayı girin' }).positive('Sıfırdan büyük olmalı'),
+  safety_order_step_pct: z.number({ required_error: 'Bu alan zorunlu', invalid_type_error: 'Geçerli bir sayı girin' }).positive('Sıfırdan büyük olmalı'),
   safety_order_volume_scale: z.number().min(1).default(1.5),
   safety_order_step_scale: z.number().min(1).default(1.0),
   take_profit_type: z.enum(['fixed', 'trailing']).default('fixed'),
-  take_profit_pct: z.number({ invalid_type_error: 'Sayı girin' }).positive('Pozitif olmalı'),
+  take_profit_pct: z.number({ required_error: 'Bu alan zorunlu', invalid_type_error: 'Geçerli bir sayı girin' }).positive('Sıfırdan büyük olmalı'),
   trailing_deviation_pct: z.number().positive().default(0.5),
   stop_loss_enabled: z.boolean().default(false),
   stop_loss_pct: z.number().positive().optional(),
@@ -92,7 +92,6 @@ export default function CreateBotPage() {
 
   const { register, handleSubmit, watch, trigger, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    mode: 'onChange',
     defaultValues: {
       is_paper: false,
       max_safety_orders: 5,
