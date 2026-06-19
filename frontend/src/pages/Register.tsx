@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -5,7 +6,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { authApi } from '@/services/api'
-import { Zap, Loader2 } from 'lucide-react'
+import { Zap, Loader2, Mail, Lock, Eye, EyeOff, User } from 'lucide-react'
 
 const schema = z.object({
   email: z.string().email(),
@@ -18,6 +19,7 @@ type FormData = z.infer<typeof schema>
 export default function RegisterPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const [showPassword, setShowPassword] = useState(false)
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -34,57 +36,148 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-[#08090f] overflow-hidden relative px-4">
+      {/* Background glow orbs */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-60 -right-60 w-[500px] h-[500px] rounded-full bg-violet-600/15 blur-[120px]" />
+        <div className="absolute -bottom-60 -left-60 w-[500px] h-[500px] rounded-full bg-blue-600/15 blur-[120px]" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] rounded-full bg-indigo-600/5 blur-[100px]" />
+        <div
+          className="absolute inset-0 opacity-30"
+          style={{
+            backgroundImage:
+              'linear-gradient(rgba(99,102,241,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(99,102,241,0.06) 1px, transparent 1px)',
+            backgroundSize: '60px 60px',
+          }}
+        />
+      </div>
+
+      <div className="relative z-10 w-full max-w-md">
+        {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center mb-4">
-            <Zap className="w-9 h-9 text-white" />
+          <div className="relative mb-4">
+            <div className="absolute inset-0 rounded-2xl bg-violet-500/40 blur-2xl scale-110" />
+            <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center shadow-2xl">
+              <Zap className="w-9 h-9 text-white" />
+            </div>
           </div>
-          <h1 className="text-2xl font-bold text-foreground">{t('auth.registerTitle')}</h1>
+          <h1 className="text-3xl font-bold text-white tracking-tight">CryptoBOT</h1>
+          <p className="text-gray-500 text-sm mt-1">Binance DCA Bot Platform</p>
         </div>
 
-        <div className="bg-card rounded-2xl border border-border p-8">
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">{t('auth.email')}</label>
-              <input {...register('email')} type="email"
-                className="w-full px-4 py-2.5 bg-input border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                placeholder="ornek@email.com"
-              />
-              {errors.email && <p className="text-destructive text-xs mt-1">{errors.email.message}</p>}
+        {/* Card */}
+        <div className="relative">
+          <div className="absolute inset-0 rounded-3xl bg-gradient-to-b from-violet-500/10 to-blue-500/10 blur-xl" />
+          <div className="relative rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-2xl p-8 shadow-2xl">
+            <h2 className="text-xl font-semibold text-white mb-1">{t('auth.registerTitle')}</h2>
+            <p className="text-gray-500 text-sm mb-7">Ücretsiz hesap oluşturun</p>
+
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+              {/* Email */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  {t('auth.email')}
+                </label>
+                <div className="relative group">
+                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-violet-400 transition-colors" />
+                  <input
+                    {...register('email')}
+                    type="email"
+                    autoComplete="email"
+                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500/50 transition-all"
+                    placeholder="ornek@email.com"
+                  />
+                </div>
+                {errors.email && (
+                  <p className="text-red-400 text-xs mt-1.5">{errors.email.message}</p>
+                )}
+              </div>
+
+              {/* Username */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  {t('auth.username')}
+                </label>
+                <div className="relative group">
+                  <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-violet-400 transition-colors" />
+                  <input
+                    {...register('username')}
+                    type="text"
+                    autoComplete="username"
+                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500/50 transition-all"
+                    placeholder="kullanici123"
+                  />
+                </div>
+                {errors.username && (
+                  <p className="text-red-400 text-xs mt-1.5">{errors.username.message}</p>
+                )}
+              </div>
+
+              {/* Password */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  {t('auth.password')}
+                </label>
+                <div className="relative group">
+                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-violet-400 transition-colors" />
+                  <input
+                    {...register('password')}
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    className="w-full pl-10 pr-11 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500/50 transition-all"
+                    placeholder="Min 8 karakter"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {errors.password && (
+                  <p className="text-red-400 text-xs mt-1.5">{errors.password.message}</p>
+                )}
+              </div>
+
+              {/* Submit */}
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="relative w-full py-3 mt-1 rounded-xl font-semibold text-white overflow-hidden group disabled:opacity-60 transition-all duration-200"
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-violet-600 to-blue-600 group-hover:from-violet-500 group-hover:to-blue-500 transition-all duration-200" />
+                <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-gradient-to-r from-violet-400/20 to-blue-400/20 blur-xl" />
+                <span className="relative flex items-center justify-center gap-2">
+                  {isSubmitting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Zap className="w-4 h-4" />
+                  )}
+                  {t('auth.register')}
+                </span>
+              </button>
+            </form>
+
+            <div className="mt-6 pt-5 border-t border-white/10 text-center">
+              <p className="text-sm text-gray-500">
+                {t('auth.hasAccount')}{' '}
+                <Link
+                  to="/login"
+                  className="text-violet-400 hover:text-violet-300 font-medium transition-colors"
+                >
+                  {t('auth.login')}
+                </Link>
+              </p>
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">{t('auth.username')}</label>
-              <input {...register('username')}
-                className="w-full px-4 py-2.5 bg-input border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                placeholder="kullanici123"
-              />
-              {errors.username && <p className="text-destructive text-xs mt-1">{errors.username.message}</p>}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">{t('auth.password')}</label>
-              <input {...register('password')} type="password"
-                className="w-full px-4 py-2.5 bg-input border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                placeholder="Min 8 karakter"
-              />
-              {errors.password && <p className="text-destructive text-xs mt-1">{errors.password.message}</p>}
-            </div>
-
-            <button type="submit" disabled={isSubmitting}
-              className="w-full py-2.5 bg-primary text-primary-foreground font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-              {t('auth.register')}
-            </button>
-          </form>
-
-          <p className="text-center text-sm text-muted-foreground mt-6">
-            {t('auth.hasAccount')}{' '}
-            <Link to="/login" className="text-primary hover:underline font-medium">{t('auth.login')}</Link>
-          </p>
+          </div>
         </div>
+
+        <p className="text-center text-xs text-gray-700 mt-5">
+          Devam ederek{' '}
+          <span className="text-gray-600">Kullanım Koşulları</span>'nı kabul etmiş olursunuz.
+        </p>
       </div>
     </div>
   )
