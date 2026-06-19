@@ -5,9 +5,15 @@ from passlib.context import CryptContext
 from cryptography.fernet import Fernet
 from app.core.config import settings
 import base64
+import hashlib
 import os
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def _prepare_password(password: str) -> str:
+    # bcrypt truncates at 72 bytes; pre-hash with SHA-256 to handle any length safely
+    return base64.b64encode(hashlib.sha256(password.encode()).digest()).decode()
 
 
 def get_fernet() -> Fernet:
@@ -31,11 +37,11 @@ def decrypt_api_key(encrypted_key: str) -> str:
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    return pwd_context.verify(_prepare_password(plain_password), hashed_password)
 
 
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    return pwd_context.hash(_prepare_password(password))
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
