@@ -1,4 +1,4 @@
-import { useState, forwardRef } from 'react'
+import { useState, forwardRef, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { botsApi, exchangeKeysApi } from '@/services/api'
-import { ChevronRight, ChevronLeft, Check } from 'lucide-react'
+import { ChevronRight, TrendingUp, Shield, Settings2, BarChart3, AlertCircle } from 'lucide-react'
 import { cn } from '@/utils/cn'
 
 const TOP_USDT_PAIRS = [
@@ -18,18 +18,18 @@ const TOP_USDT_PAIRS = [
 ]
 
 const schema = z.object({
-  name: z.string({ required_error: 'Bot adı zorunlu' }).min(1, 'Bot adı zorunlu'),
+  name: z.string().min(1, 'Bot adı zorunlu'),
   exchange_key_id: z.number().optional(),
-  pair: z.string({ required_error: 'Parite zorunlu' }).min(3, 'En az 3 karakter'),
+  pair: z.string().min(3, 'Parite zorunlu'),
   is_paper: z.boolean().default(false),
-  base_order_size: z.number({ required_error: 'Bu alan zorunlu', invalid_type_error: 'Geçerli bir sayı girin' }).positive('Sıfırdan büyük olmalı'),
+  base_order_size: z.number({ required_error: 'Zorunlu', invalid_type_error: 'Sayı girin' }).positive('Sıfırdan büyük olmalı'),
   max_safety_orders: z.number().int().min(0).max(25).default(5),
-  safety_order_size: z.number({ required_error: 'Bu alan zorunlu', invalid_type_error: 'Geçerli bir sayı girin' }).positive('Sıfırdan büyük olmalı'),
-  safety_order_step_pct: z.number({ required_error: 'Bu alan zorunlu', invalid_type_error: 'Geçerli bir sayı girin' }).positive('Sıfırdan büyük olmalı'),
+  safety_order_size: z.number({ required_error: 'Zorunlu', invalid_type_error: 'Sayı girin' }).positive('Sıfırdan büyük olmalı'),
+  safety_order_step_pct: z.number({ required_error: 'Zorunlu', invalid_type_error: 'Sayı girin' }).positive('Sıfırdan büyük olmalı'),
   safety_order_volume_scale: z.number().min(1).default(1.5),
   safety_order_step_scale: z.number().min(1).default(1.0),
   take_profit_type: z.enum(['fixed', 'trailing']).default('fixed'),
-  take_profit_pct: z.number({ required_error: 'Bu alan zorunlu', invalid_type_error: 'Geçerli bir sayı girin' }).positive('Sıfırdan büyük olmalı'),
+  take_profit_pct: z.number({ required_error: 'Zorunlu', invalid_type_error: 'Sayı girin' }).positive('Sıfırdan büyük olmalı'),
   trailing_deviation_pct: z.number().positive().default(0.5),
   stop_loss_enabled: z.boolean().default(false),
   stop_loss_pct: z.number().positive().optional(),
@@ -39,27 +39,52 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>
 
-const STEPS = ['Genel', 'Base Order', 'Safety Orders', 'Take Profit / Stop Loss', 'Gelişmiş']
-
-const STEP_FIELDS: Record<number, (keyof FormData)[]> = {
-  0: ['name', 'pair'],
-  1: ['base_order_size'],
-  2: ['max_safety_orders', 'safety_order_size', 'safety_order_step_pct', 'safety_order_volume_scale', 'safety_order_step_scale'],
-  3: ['take_profit_type', 'take_profit_pct'],
-  4: ['start_condition', 'reinvest_pct'],
+interface SOLevel {
+  num: number
+  price: number
+  deviation: number
+  cumDeviation: number
+  soSize: number
+  totalQuote: number
+  avgPrice: number
+  requiredChange: number
 }
 
-function FormField({ label, error, children, hint }: {
-  label: string; error?: string; children: React.ReactNode; hint?: string
-}) {
-  return (
-    <div>
-      <label className="block text-sm font-medium text-foreground mb-1.5">{label}</label>
-      {children}
-      {hint && !error && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
-      {error && <p className="text-destructive text-xs mt-1">{error}</p>}
-    </div>
-  )
+function computeDCALevels(
+  refPrice: number,
+  baseOrderSize: number,
+  soSize: number,
+  stepPct: number,
+  volumeScale: number,
+  stepScale: number,
+  maxSOs: number,
+  tpPct: number,
+): SOLevel[] {
+  if (!refPrice || !baseOrderSize || !soSize || !stepPct || !tpPct || maxSOs < 1) return []
+  const levels: SOLevel[] = []
+  let cumDev = 0
+  let totalQuote = baseOrderSize
+  let totalBase = baseOrderSize / refPrice
+  let curStep = stepPct
+  let curSOSize = soSize
+
+  for (let i = 1; i <= Math.min(maxSOs, 25); i++) {
+    if (i > 1) {
+      curStep = curStep * stepScale
+      curSOSize = curSOSize * volumeScale
+    }
+    cumDev += curStep
+    const soPrice = refPrice * (1 - cumDev / 100)
+    const soBase = curSOSize / soPrice
+    totalQuote += curSOSize
+    totalBase += soBase
+    const avgPrice = totalQuote / totalBase
+    const tpPrice = avgPrice * (1 + tpPct / 100)
+    const requiredChange = ((tpPrice - soPrice) / soPrice) * 100
+
+    levels.push({ num: i, price: soPrice, deviation: curStep, cumDeviation: cumDev, soSize: curSOSize, totalQuote, avgPrice, requiredChange })
+  }
+  return levels
 }
 
 const Input = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
@@ -86,10 +111,52 @@ const Select = forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<HTMLSele
 )
 Select.displayName = 'Select'
 
+function SectionCard({ icon: Icon, title, color, children }: {
+  icon: React.ElementType
+  title: string
+  color: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="bg-card border border-border rounded-xl overflow-hidden">
+      <div className={cn('flex items-center gap-2 px-4 py-3 border-b border-border', color)}>
+        <Icon className="w-4 h-4" />
+        <span className="text-sm font-semibold">{title}</span>
+      </div>
+      <div className="p-4 space-y-3">{children}</div>
+    </div>
+  )
+}
+
+function Field({ label, error, hint, children, inline }: {
+  label: string; error?: string; hint?: string; children: React.ReactNode; inline?: boolean
+}) {
+  return (
+    <div className={cn(inline && 'flex items-center gap-3')}>
+      {!inline && <label className="block text-xs font-medium text-muted-foreground mb-1 uppercase tracking-wide">{label}</label>}
+      {children}
+      {inline && <label className="text-sm text-foreground">{label}</label>}
+      {hint && !error && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
+      {error && <p className="text-destructive text-xs mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{error}</p>}
+    </div>
+  )
+}
+
+function InputGroup({ children, suffix }: { children: React.ReactNode; suffix?: string }) {
+  return (
+    <div className="flex items-center gap-0">
+      <div className="flex-1">{children}</div>
+      {suffix && (
+        <span className="px-3 py-2 bg-muted border border-l-0 border-border rounded-r-lg text-xs text-muted-foreground">{suffix}</span>
+      )}
+    </div>
+  )
+}
+
 export default function CreateBotPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const [step, setStep] = useState(0)
+  const [refPrice, setRefPrice] = useState<string>('100')
 
   const { data: keysData } = useQuery({
     queryKey: ['exchange-keys'],
@@ -101,11 +168,10 @@ export default function CreateBotPage() {
     register,
     handleSubmit,
     watch,
-    trigger,
     formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
-    mode: 'onChange',       // errors clear as user types
+    mode: 'onChange',
     reValidateMode: 'onChange',
     defaultValues: {
       is_paper: false,
@@ -120,8 +186,9 @@ export default function CreateBotPage() {
     },
   })
 
-  const stopLossEnabled = watch('stop_loss_enabled')
-  const tpType = watch('take_profit_type')
+  const vals = watch()
+  const stopLossEnabled = vals.stop_loss_enabled
+  const tpType = vals.take_profit_type
 
   const createMut = useMutation({
     mutationFn: (data: FormData) => botsApi.create(data),
@@ -132,259 +199,340 @@ export default function CreateBotPage() {
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Hata'),
   })
 
-  // validate only this step's fields; advance only if all pass
-  const handleNext = async () => {
-    const valid = await trigger(STEP_FIELDS[step])
-    if (valid) setStep(s => s + 1)
-  }
-
   const onSubmit = (data: FormData) => {
     data.pair = data.pair.toUpperCase()
-    if (!data.exchange_key_id || isNaN(data.exchange_key_id as number)) {
-      data.exchange_key_id = undefined
-    }
+    if (!data.exchange_key_id || isNaN(data.exchange_key_id as number)) data.exchange_key_id = undefined
     createMut.mutate(data)
   }
 
-  // helper: only show error for a field if it has been triggered/touched
   const e = (field: keyof FormData) => errors[field]?.message as string | undefined
 
+  const refPriceNum = parseFloat(refPrice) || 100
+
+  const dcaLevels = useMemo(() => computeDCALevels(
+    refPriceNum,
+    vals.base_order_size || 0,
+    vals.safety_order_size || 0,
+    vals.safety_order_step_pct || 0,
+    vals.safety_order_volume_scale || 1.5,
+    vals.safety_order_step_scale || 1.0,
+    vals.max_safety_orders || 0,
+    vals.take_profit_pct || 0,
+  ), [refPriceNum, vals.base_order_size, vals.safety_order_size, vals.safety_order_step_pct, vals.safety_order_volume_scale, vals.safety_order_step_scale, vals.max_safety_orders, vals.take_profit_pct])
+
+  const totalRequired = dcaLevels.length > 0
+    ? dcaLevels[dcaLevels.length - 1].totalQuote
+    : (vals.base_order_size || 0)
+
+  const fmt = (n: number, d = 2) => n.toLocaleString('tr-TR', { minimumFractionDigits: d, maximumFractionDigits: d })
+
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-7xl mx-auto pb-10">
       <div className="flex items-center gap-2 text-sm text-muted-foreground mb-6">
         <button onClick={() => navigate('/bots')} className="hover:text-foreground">Botlar</button>
         <ChevronRight className="w-4 h-4" />
         <span className="text-foreground">{t('bots.create')}</span>
       </div>
 
-      {/* Step indicator */}
-      <div className="flex items-center gap-2 mb-8">
-        {STEPS.map((s, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <div className={cn(
-              'w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium',
-              i < step ? 'bg-primary text-primary-foreground' :
-              i === step ? 'bg-primary/20 text-primary border border-primary' :
-              'bg-muted text-muted-foreground'
-            )}>
-              {i < step ? <Check className="w-4 h-4" /> : i + 1}
-            </div>
-            {i < STEPS.length - 1 && (
-              <div className={cn('h-px w-6 flex-1', i < step ? 'bg-primary' : 'bg-border')} />
-            )}
-          </div>
-        ))}
-      </div>
+      <form onSubmit={handleSubmit(onSubmit)}>
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-6 items-start">
 
-      <div className="bg-card rounded-xl border border-border p-6">
-        <h2 className="text-lg font-semibold mb-6">{STEPS[step]}</h2>
+          {/* ── Left column: parameters ── */}
+          <div className="space-y-4">
 
-        <form onSubmit={handleSubmit(onSubmit)}>
-
-          {/* Step 0 – General */}
-          {step === 0 && (
-            <div className="space-y-4">
-              <FormField label="Bot Adı" error={e('name')}>
-                <Input {...register('name')} placeholder="BTC DCA Bot" />
-              </FormField>
-
-              <FormField label="Parite" error={e('pair')}>
-                <Input
-                  {...register('pair')}
-                  list="pair-list"
-                  placeholder="BTCUSDT veya seçin..."
-                  className="uppercase"
-                />
-                <datalist id="pair-list">
-                  {TOP_USDT_PAIRS.map(p => <option key={p} value={p} />)}
-                </datalist>
-              </FormField>
-
-              <FormField label="Exchange API Anahtarı">
-                <Select {...register('exchange_key_id', {
-                  setValueAs: (v) => v === '' ? undefined : Number(v),
-                })}>
-                  <option value="">Anahtar seçin (Paper Trading için gerek yok)</option>
+            {/* Bot Settings */}
+            <SectionCard icon={Settings2} title="Bot Ayarları" color="bg-blue-500/10 text-blue-400">
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Bot Adı" error={e('name')}>
+                  <Input {...register('name')} placeholder="BTC DCA Bot" />
+                </Field>
+                <Field label="Parite" error={e('pair')}>
+                  <Input {...register('pair')} list="pair-list" placeholder="BTCUSDT" className="uppercase" />
+                  <datalist id="pair-list">
+                    {TOP_USDT_PAIRS.map(p => <option key={p} value={p} />)}
+                  </datalist>
+                </Field>
+              </div>
+              <Field label="Exchange API Anahtarı">
+                <Select {...register('exchange_key_id', { setValueAs: (v) => v === '' ? undefined : Number(v) })}>
+                  <option value="">— Anahtar seçin (Paper Trading için gerek yok) —</option>
                   {keys.map((k: any) => (
                     <option key={k.id} value={k.id}>{k.label}</option>
                   ))}
                 </Select>
-              </FormField>
+              </Field>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" {...register('is_paper')} className="w-4 h-4 accent-primary rounded" />
+                <span className="text-sm font-medium">Paper Trading Modu</span>
+                <span className="text-xs text-muted-foreground">(gerçek para kullanılmaz)</span>
+              </label>
+            </SectionCard>
 
-              <div className="flex items-center gap-3 p-3 bg-accent/50 rounded-lg">
-                <input type="checkbox" id="is_paper" {...register('is_paper')} className="w-4 h-4 accent-primary" />
-                <label htmlFor="is_paper" className="text-sm">
-                  <span className="font-medium">Paper Trading Modu</span>
-                  <span className="text-muted-foreground ml-2">Gerçek para kullanılmaz</span>
-                </label>
-              </div>
-            </div>
-          )}
+            {/* Base Order */}
+            <SectionCard icon={TrendingUp} title="Base Order" color="bg-green-500/10 text-green-400">
+              <Field label="İlk Alım Miktarı" error={e('base_order_size')} hint="İşlem açılışında kullanılacak başlangıç yatırım miktarı">
+                <InputGroup suffix="USDT">
+                  <Input
+                    type="number" step="0.01" min="0"
+                    {...register('base_order_size', { valueAsNumber: true })}
+                    placeholder="100"
+                    className="rounded-r-none"
+                  />
+                </InputGroup>
+              </Field>
+            </SectionCard>
 
-          {/* Step 1 – Base Order */}
-          {step === 1 && (
-            <div className="space-y-4">
-              <FormField label="Base Order Miktarı (USDT)" error={e('base_order_size')}>
-                <Input
-                  type="number" step="0.01" min="0"
-                  {...register('base_order_size', { valueAsNumber: true })}
-                  placeholder="100"
-                />
-              </FormField>
-              <div className="p-4 bg-accent/30 rounded-lg text-sm">
-                <p className="text-muted-foreground">İşlem açılışında kullanılacak ilk alım miktarı. USDT cinsinden giriniz.</p>
-              </div>
-            </div>
-          )}
-
-          {/* Step 2 – Safety Orders */}
-          {step === 2 && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <FormField label="Maks. Safety Order Sayısı" error={e('max_safety_orders')}>
+            {/* Safety Orders */}
+            <SectionCard icon={BarChart3} title="Safety Orders (DCA)" color="bg-purple-500/10 text-purple-400">
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Maks. SO Sayısı" error={e('max_safety_orders')} hint="0–25">
                   <Input
                     type="number" min="0" max="25"
                     {...register('max_safety_orders', { valueAsNumber: true })}
+                    placeholder="5"
                   />
-                </FormField>
-                <FormField label="SO Miktarı (USDT)" error={e('safety_order_size')}>
-                  <Input
-                    type="number" step="0.01" min="0"
-                    {...register('safety_order_size', { valueAsNumber: true })}
-                    placeholder="50"
-                  />
-                </FormField>
+                </Field>
+                <Field label="SO Miktarı" error={e('safety_order_size')} hint="İlk SO büyüklüğü">
+                  <InputGroup suffix="USDT">
+                    <Input
+                      type="number" step="0.01" min="0"
+                      {...register('safety_order_size', { valueAsNumber: true })}
+                      placeholder="50"
+                      className="rounded-r-none"
+                    />
+                  </InputGroup>
+                </Field>
               </div>
 
-              <FormField label="Fiyat Sapma % (İlk SO)" error={e('safety_order_step_pct')}>
-                <Input
-                  type="number" step="0.1" min="0"
-                  {...register('safety_order_step_pct', { valueAsNumber: true })}
-                  placeholder="2.0"
-                />
-              </FormField>
+              <Field label="İlk SO Fiyat Sapması" error={e('safety_order_step_pct')} hint="Base order fiyatından ilk SO'ya kadar düşüş yüzdesi">
+                <InputGroup suffix="%">
+                  <Input
+                    type="number" step="0.1" min="0.1"
+                    {...register('safety_order_step_pct', { valueAsNumber: true })}
+                    placeholder="2.0"
+                    className="rounded-r-none"
+                  />
+                </InputGroup>
+              </Field>
 
-              <div className="grid grid-cols-2 gap-4">
-                <FormField label="Volume Scale" error={e('safety_order_volume_scale')} hint="Her SO miktarı öncekinin kaç katı">
-                  <Input
-                    type="number" step="0.1" min="1"
-                    {...register('safety_order_volume_scale', { valueAsNumber: true })}
-                    placeholder="1.5"
-                  />
-                </FormField>
-                <FormField label="Step Scale" error={e('safety_order_step_scale')} hint="Her SO aralığı öncekinin kaç katı">
-                  <Input
-                    type="number" step="0.1" min="1"
-                    {...register('safety_order_step_scale', { valueAsNumber: true })}
-                    placeholder="1.0"
-                  />
-                </FormField>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Volume Scale" error={e('safety_order_volume_scale')} hint="Her SO öncekinin kaç katı büyüklükte">
+                  <InputGroup suffix="×">
+                    <Input
+                      type="number" step="0.1" min="1"
+                      {...register('safety_order_volume_scale', { valueAsNumber: true })}
+                      placeholder="1.5"
+                      className="rounded-r-none"
+                    />
+                  </InputGroup>
+                </Field>
+                <Field label="Step Scale" error={e('safety_order_step_scale')} hint="Her SO aralığı öncekinin kaç katı">
+                  <InputGroup suffix="×">
+                    <Input
+                      type="number" step="0.1" min="1"
+                      {...register('safety_order_step_scale', { valueAsNumber: true })}
+                      placeholder="1.0"
+                      className="rounded-r-none"
+                    />
+                  </InputGroup>
+                </Field>
               </div>
-            </div>
-          )}
+            </SectionCard>
 
-          {/* Step 3 – TP / SL */}
-          {step === 3 && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <FormField label="Take Profit Tipi">
+            {/* Take Profit / Stop Loss */}
+            <SectionCard icon={Shield} title="Take Profit / Stop Loss" color="bg-orange-500/10 text-orange-400">
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Take Profit Tipi">
                   <Select {...register('take_profit_type')}>
                     <option value="fixed">Sabit</option>
                     <option value="trailing">Trailing</option>
                   </Select>
-                </FormField>
-                <FormField label="Take Profit %" error={e('take_profit_pct')}>
-                  <Input
-                    type="number" step="0.1" min="0"
-                    {...register('take_profit_pct', { valueAsNumber: true })}
-                    placeholder="2.0"
-                  />
-                </FormField>
+                </Field>
+                <Field label="Take Profit" error={e('take_profit_pct')}>
+                  <InputGroup suffix="%">
+                    <Input
+                      type="number" step="0.1" min="0.1"
+                      {...register('take_profit_pct', { valueAsNumber: true })}
+                      placeholder="2.0"
+                      className="rounded-r-none"
+                    />
+                  </InputGroup>
+                </Field>
               </div>
 
               {tpType === 'trailing' && (
-                <FormField label="Trailing Deviation %" error={e('trailing_deviation_pct')}>
-                  <Input
-                    type="number" step="0.1" min="0"
-                    {...register('trailing_deviation_pct', { valueAsNumber: true })}
-                    placeholder="0.5"
-                  />
-                </FormField>
+                <Field label="Trailing Deviation" error={e('trailing_deviation_pct')} hint="Zirve fiyattan ne kadar geri çekilince satılsın">
+                  <InputGroup suffix="%">
+                    <Input
+                      type="number" step="0.1" min="0.1"
+                      {...register('trailing_deviation_pct', { valueAsNumber: true })}
+                      placeholder="0.5"
+                      className="rounded-r-none"
+                    />
+                  </InputGroup>
+                </Field>
               )}
 
-              <div className="border-t border-border pt-4">
-                <div className="flex items-center gap-3 mb-4">
-                  <input type="checkbox" id="sl_enabled" {...register('stop_loss_enabled')} className="w-4 h-4 accent-primary" />
-                  <label htmlFor="sl_enabled" className="text-sm font-medium">Stop Loss Aktif</label>
-                </div>
+              <div className="border-t border-border pt-3 space-y-3">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input type="checkbox" id="sl_enabled" {...register('stop_loss_enabled')} className="w-4 h-4 accent-primary rounded" />
+                  <span className="text-sm font-medium">Stop Loss Aktif</span>
+                </label>
                 {stopLossEnabled && (
-                  <FormField label="Stop Loss %">
-                    <Input
-                      type="number" step="0.1" min="0"
-                      {...register('stop_loss_pct', { valueAsNumber: true })}
-                      placeholder="5.0"
-                    />
-                  </FormField>
+                  <Field label="Stop Loss" error={e('stop_loss_pct')} hint="Ort. maliyetten bu kadar düşünce pozisyon kapatılır">
+                    <InputGroup suffix="%">
+                      <Input
+                        type="number" step="0.1" min="0.1"
+                        {...register('stop_loss_pct', { valueAsNumber: true })}
+                        placeholder="5.0"
+                        className="rounded-r-none"
+                      />
+                    </InputGroup>
+                  </Field>
                 )}
               </div>
-            </div>
-          )}
+            </SectionCard>
 
-          {/* Step 4 – Advanced */}
-          {step === 4 && (
-            <div className="space-y-4">
-              <FormField label="Sinyal Kaynağı">
-                <Select {...register('start_condition')}>
-                  <option value="immediately">Hemen Başlat</option>
-                  <option value="indicator">İndikatör Sinyali</option>
-                  <option value="webhook">TradingView Webhook</option>
-                </Select>
-              </FormField>
+            {/* Advanced */}
+            <SectionCard icon={Settings2} title="Gelişmiş Ayarlar" color="bg-gray-500/10 text-gray-400">
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Sinyal Kaynağı" hint="Bot ne zaman işlem açacak">
+                  <Select {...register('start_condition')}>
+                    <option value="immediately">Hemen Başlat</option>
+                    <option value="indicator">İndikatör Sinyali</option>
+                    <option value="webhook">TradingView Webhook</option>
+                  </Select>
+                </Field>
+                <Field label="Yeniden Yatırım" hint="Kâr tekrar yatırıma eklenir">
+                  <Select {...register('reinvest_pct', { valueAsNumber: true })}>
+                    <option value={0}>Kapalı (%0)</option>
+                    <option value={25}>%25 Reinvest</option>
+                    <option value={50}>%50 Reinvest</option>
+                    <option value={75}>%75 Reinvest</option>
+                    <option value={100}>%100 Reinvest</option>
+                  </Select>
+                </Field>
+              </div>
+            </SectionCard>
 
-              <FormField label="Yeniden Yatırım %">
-                <Select {...register('reinvest_pct', { valueAsNumber: true })}>
-                  <option value={0}>Kapalı (0%)</option>
-                  <option value={50}>%50 Reinvest</option>
-                  <option value={100}>%100 Reinvest</option>
-                </Select>
-              </FormField>
-            </div>
-          )}
-
-          {/* Navigation */}
-          <div className="flex items-center justify-between mt-8 pt-6 border-t border-border">
-            <button
-              type="button"
-              onClick={() => setStep(s => s - 1)}
-              disabled={step === 0}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border hover:bg-accent disabled:opacity-30 text-sm"
-            >
-              <ChevronLeft className="w-4 h-4" />
-              {t('common.back')}
-            </button>
-
-            {step < STEPS.length - 1 ? (
-              <button
-                type="button"
-                onClick={handleNext}
-                className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 text-sm font-medium"
-              >
-                {t('common.next')}
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            ) : (
+            <div className="flex justify-end">
               <button
                 type="submit"
                 disabled={createMut.isPending}
-                className="flex items-center gap-2 px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 disabled:opacity-50 text-sm font-medium"
+                className="px-8 py-3 bg-primary text-primary-foreground rounded-xl font-semibold text-sm hover:opacity-90 disabled:opacity-50 transition-opacity"
               >
-                <Check className="w-4 h-4" />
-                {createMut.isPending ? 'Oluşturuluyor...' : 'Bot Oluştur'}
+                {createMut.isPending ? 'Oluşturuluyor...' : 'Bot Oluştur →'}
               </button>
-            )}
+            </div>
           </div>
-        </form>
-      </div>
+
+          {/* ── Right column: DCA Preview ── */}
+          <div className="xl:sticky xl:top-6 space-y-4">
+            <div className="bg-card border border-border rounded-xl overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-accent/30">
+                <span className="text-sm font-semibold">DCA Seviye Önizleme</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Ref. Fiyat:</span>
+                  <input
+                    type="number"
+                    value={refPrice}
+                    onChange={e => setRefPrice(e.target.value)}
+                    className="w-24 px-2 py-1 bg-input border border-border rounded text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary text-right"
+                    placeholder="100"
+                  />
+                  <span className="text-xs text-muted-foreground">USDT</span>
+                </div>
+              </div>
+
+              {dcaLevels.length === 0 ? (
+                <div className="p-8 text-center text-muted-foreground text-sm">
+                  <BarChart3 className="w-10 h-10 mx-auto mb-3 opacity-20" />
+                  <p>Parametreleri girin</p>
+                  <p className="text-xs mt-1">Safety order seviyeleri burada görünecek</p>
+                </div>
+              ) : (
+                <>
+                  {/* Base order row */}
+                  <div className="px-4 py-2 bg-green-500/5 border-b border-border">
+                    <div className="grid grid-cols-4 gap-2 text-xs">
+                      <span className="font-medium text-green-400">Base</span>
+                      <span className="text-right font-mono">{fmt(refPriceNum)}</span>
+                      <span className="text-right text-muted-foreground">0.00%</span>
+                      <span className="text-right font-mono">{fmt(vals.base_order_size || 0)} $</span>
+                    </div>
+                  </div>
+
+                  {/* Column headers */}
+                  <div className="px-4 py-1.5 bg-muted/30 border-b border-border">
+                    <div className="grid grid-cols-4 gap-2 text-xs text-muted-foreground font-medium">
+                      <span>SO #</span>
+                      <span className="text-right">Fiyat</span>
+                      <span className="text-right">Kümül %</span>
+                      <span className="text-right">SO Büyük.</span>
+                    </div>
+                  </div>
+
+                  <div className="max-h-80 overflow-y-auto">
+                    {dcaLevels.map((lvl, idx) => (
+                      <div
+                        key={lvl.num}
+                        className={cn(
+                          'px-4 py-2 border-b border-border/50 hover:bg-accent/30 transition-colors',
+                          idx % 2 === 0 ? 'bg-background' : 'bg-card'
+                        )}
+                      >
+                        <div className="grid grid-cols-4 gap-2 text-xs">
+                          <span className="font-medium text-purple-400">SO {lvl.num}</span>
+                          <span className="text-right font-mono">{fmt(lvl.price)}</span>
+                          <span className="text-right text-red-400">-{fmt(lvl.cumDeviation)}%</span>
+                          <span className="text-right font-mono">{fmt(lvl.soSize)} $</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground mt-1">
+                          <span>Ort. maliyet: {fmt(lvl.avgPrice)}</span>
+                          <span className="text-right">TP için: +{fmt(lvl.requiredChange)}%</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Summary */}
+                  <div className="p-4 bg-accent/20 border-t border-border space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Toplam yatırım (tüm SOlar dolarsa):</span>
+                      <span className="font-semibold font-mono">{fmt(totalRequired)} USDT</span>
+                    </div>
+                    {dcaLevels.length > 0 && (
+                      <>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-muted-foreground">Maks. düşüş:</span>
+                          <span className="text-red-400 font-mono">-{fmt(dcaLevels[dcaLevels.length - 1].cumDeviation)}%</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-muted-foreground">Maks. SO büyüklüğü:</span>
+                          <span className="font-mono">{fmt(dcaLevels[dcaLevels.length - 1].soSize)} USDT</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-muted-foreground">Son SO ort. maliyeti:</span>
+                          <span className="font-mono">{fmt(dcaLevels[dcaLevels.length - 1].avgPrice)}</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Quick tip */}
+            <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-4 text-xs text-muted-foreground space-y-1">
+              <p className="font-medium text-blue-400 mb-2">Nasıl çalışır?</p>
+              <p>• <strong>Volume Scale:</strong> Her SO bir öncekinin x katı kadar büyük olur</p>
+              <p>• <strong>Step Scale:</strong> Her SO arasındaki fiyat farkı bir öncekinin x katı kadar artar</p>
+              <p>• <strong>Ort. Maliyet:</strong> Tüm alımlar hesaba katılarak güncellenen ortalama fiyat</p>
+              <p>• <strong>TP için gereken %:</strong> O SO seviyesinden kâra geçmek için gereken yükseliş</p>
+            </div>
+          </div>
+        </div>
+      </form>
     </div>
   )
 }
