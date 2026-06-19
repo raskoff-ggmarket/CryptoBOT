@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useForm, FieldErrors } from 'react-hook-form'
+import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useNavigate } from 'react-router-dom'
@@ -39,13 +39,7 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>
 
-const STEPS = [
-  'Genel',
-  'Base Order',
-  'Safety Orders',
-  'Take Profit / Stop Loss',
-  'Gelişmiş',
-]
+const STEPS = ['Genel', 'Base Order', 'Safety Orders', 'Take Profit / Stop Loss', 'Gelişmiş']
 
 const STEP_FIELDS: Record<number, (keyof FormData)[]> = {
   0: ['name', 'pair'],
@@ -55,7 +49,9 @@ const STEP_FIELDS: Record<number, (keyof FormData)[]> = {
   4: ['start_condition', 'reinvest_pct'],
 }
 
-function FormField({ label, error, children, hint }: { label: string; error?: string; children: React.ReactNode; hint?: string }) {
+function FormField({ label, error, children, hint }: {
+  label: string; error?: string; children: React.ReactNode; hint?: string
+}) {
   return (
     <div>
       <label className="block text-sm font-medium text-foreground mb-1.5">{label}</label>
@@ -90,7 +86,6 @@ export default function CreateBotPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [step, setStep] = useState(0)
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   const { data: keysData } = useQuery({
     queryKey: ['exchange-keys'],
@@ -98,8 +93,16 @@ export default function CreateBotPage() {
   })
   const keys = keysData?.data?.data || []
 
-  const { register, handleSubmit, watch, getValues } = useForm<FormData>({
+  const {
+    register,
+    handleSubmit,
+    watch,
+    trigger,
+    formState: { errors },
+  } = useForm<FormData>({
     resolver: zodResolver(schema),
+    mode: 'onChange',       // errors clear as user types
+    reValidateMode: 'onChange',
     defaultValues: {
       is_paper: false,
       max_safety_orders: 5,
@@ -116,15 +119,6 @@ export default function CreateBotPage() {
   const stopLossEnabled = watch('stop_loss_enabled')
   const tpType = watch('take_profit_type')
 
-  const clearErr = (field: string) => {
-    setFieldErrors(prev => {
-      if (!prev[field]) return prev
-      const next = { ...prev }
-      delete next[field]
-      return next
-    })
-  }
-
   const createMut = useMutation({
     mutationFn: (data: FormData) => botsApi.create(data),
     onSuccess: () => {
@@ -134,27 +128,10 @@ export default function CreateBotPage() {
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Hata'),
   })
 
+  // validate only this step's fields; advance only if all pass
   const handleNext = async () => {
-    const fields = STEP_FIELDS[step]
-    const values = getValues()
-    const result = schema.safeParse(values)
-
-    const stepErrors: Record<string, string> = {}
-    if (!result.success) {
-      for (const issue of result.error.issues) {
-        const field = String(issue.path[0])
-        if ((fields as string[]).includes(field) && !stepErrors[field]) {
-          stepErrors[field] = issue.message
-        }
-      }
-    }
-
-    if (Object.keys(stepErrors).length > 0) {
-      setFieldErrors(prev => ({ ...prev, ...stepErrors }))
-      return
-    }
-
-    setStep(s => s + 1)
+    const valid = await trigger(STEP_FIELDS[step])
+    if (valid) setStep(s => s + 1)
   }
 
   const onSubmit = (data: FormData) => {
@@ -165,13 +142,8 @@ export default function CreateBotPage() {
     createMut.mutate(data)
   }
 
-  const onSubmitError = (errs: FieldErrors<FormData>) => {
-    const display: Record<string, string> = {}
-    for (const [k, v] of Object.entries(errs)) {
-      if (v?.message) display[k] = v.message as string
-    }
-    setFieldErrors(display)
-  }
+  // helper: only show error for a field if it has been triggered/touched
+  const e = (field: keyof FormData) => errors[field]?.message as string | undefined
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -181,7 +153,7 @@ export default function CreateBotPage() {
         <span className="text-foreground">{t('bots.create')}</span>
       </div>
 
-      {/* Steps */}
+      {/* Step indicator */}
       <div className="flex items-center gap-2 mb-8">
         {STEPS.map((s, i) => (
           <div key={i} className="flex items-center gap-2">
@@ -203,30 +175,24 @@ export default function CreateBotPage() {
       <div className="bg-card rounded-xl border border-border p-6">
         <h2 className="text-lg font-semibold mb-6">{STEPS[step]}</h2>
 
-        <form onSubmit={handleSubmit(onSubmit, onSubmitError)}>
-          {/* Step 0: General */}
+        <form onSubmit={handleSubmit(onSubmit)}>
+
+          {/* Step 0 – General */}
           {step === 0 && (
             <div className="space-y-4">
-              <FormField label="Bot Adı" error={fieldErrors.name}>
-                <Input
-                  {...register('name')}
-                  onInput={() => clearErr('name')}
-                  placeholder="BTC DCA Bot"
-                />
+              <FormField label="Bot Adı" error={e('name')}>
+                <Input {...register('name')} placeholder="BTC DCA Bot" />
               </FormField>
 
-              <FormField label="Parite" error={fieldErrors.pair}>
+              <FormField label="Parite" error={e('pair')}>
                 <Input
                   {...register('pair')}
-                  onInput={() => clearErr('pair')}
                   list="pair-list"
                   placeholder="BTCUSDT veya seçin..."
                   className="uppercase"
                 />
                 <datalist id="pair-list">
-                  {TOP_USDT_PAIRS.map(p => (
-                    <option key={p} value={p} />
-                  ))}
+                  {TOP_USDT_PAIRS.map(p => <option key={p} value={p} />)}
                 </datalist>
               </FormField>
 
@@ -251,80 +217,61 @@ export default function CreateBotPage() {
             </div>
           )}
 
-          {/* Step 1: Base Order */}
+          {/* Step 1 – Base Order */}
           {step === 1 && (
             <div className="space-y-4">
-              <FormField label="Base Order Miktarı (USDT)" error={fieldErrors.base_order_size}>
+              <FormField label="Base Order Miktarı (USDT)" error={e('base_order_size')}>
                 <Input
-                  type="number"
-                  step="0.01"
-                  min="0"
+                  type="number" step="0.01" min="0"
                   {...register('base_order_size', { valueAsNumber: true })}
-                  onInput={() => clearErr('base_order_size')}
                   placeholder="100"
                 />
               </FormField>
-
               <div className="p-4 bg-accent/30 rounded-lg text-sm">
                 <p className="text-muted-foreground">İşlem açılışında kullanılacak ilk alım miktarı. USDT cinsinden giriniz.</p>
               </div>
             </div>
           )}
 
-          {/* Step 2: Safety Orders */}
+          {/* Step 2 – Safety Orders */}
           {step === 2 && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <FormField label="Maks. Safety Order Sayısı" error={fieldErrors.max_safety_orders}>
+                <FormField label="Maks. Safety Order Sayısı" error={e('max_safety_orders')}>
                   <Input
-                    type="number"
-                    min="0"
-                    max="25"
+                    type="number" min="0" max="25"
                     {...register('max_safety_orders', { valueAsNumber: true })}
-                    onInput={() => clearErr('max_safety_orders')}
                   />
                 </FormField>
-                <FormField label="SO Miktarı (USDT)" error={fieldErrors.safety_order_size}>
+                <FormField label="SO Miktarı (USDT)" error={e('safety_order_size')}>
                   <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
+                    type="number" step="0.01" min="0"
                     {...register('safety_order_size', { valueAsNumber: true })}
-                    onInput={() => clearErr('safety_order_size')}
                     placeholder="50"
                   />
                 </FormField>
               </div>
 
-              <FormField label="Fiyat Sapma % (İlk SO)" error={fieldErrors.safety_order_step_pct}>
+              <FormField label="Fiyat Sapma % (İlk SO)" error={e('safety_order_step_pct')}>
                 <Input
-                  type="number"
-                  step="0.1"
-                  min="0"
+                  type="number" step="0.1" min="0"
                   {...register('safety_order_step_pct', { valueAsNumber: true })}
-                  onInput={() => clearErr('safety_order_step_pct')}
                   placeholder="2.0"
                 />
               </FormField>
 
               <div className="grid grid-cols-2 gap-4">
-                <FormField label="Volume Scale" error={fieldErrors.safety_order_volume_scale} hint="Her SO miktarı öncekinin kaç katı">
+                <FormField label="Volume Scale" error={e('safety_order_volume_scale')} hint="Her SO miktarı öncekinin kaç katı">
                   <Input
-                    type="number"
-                    step="0.1"
-                    min="1"
+                    type="number" step="0.1" min="1"
                     {...register('safety_order_volume_scale', { valueAsNumber: true })}
-                    onInput={() => clearErr('safety_order_volume_scale')}
                     placeholder="1.5"
                   />
                 </FormField>
-                <FormField label="Step Scale" error={fieldErrors.safety_order_step_scale} hint="Her SO aralığı öncekinin kaç katı">
+                <FormField label="Step Scale" error={e('safety_order_step_scale')} hint="Her SO aralığı öncekinin kaç katı">
                   <Input
-                    type="number"
-                    step="0.1"
-                    min="1"
+                    type="number" step="0.1" min="1"
                     {...register('safety_order_step_scale', { valueAsNumber: true })}
-                    onInput={() => clearErr('safety_order_step_scale')}
                     placeholder="1.0"
                   />
                 </FormField>
@@ -332,7 +279,7 @@ export default function CreateBotPage() {
             </div>
           )}
 
-          {/* Step 3: TP/SL */}
+          {/* Step 3 – TP / SL */}
           {step === 3 && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -342,26 +289,20 @@ export default function CreateBotPage() {
                     <option value="trailing">Trailing</option>
                   </Select>
                 </FormField>
-                <FormField label="Take Profit %" error={fieldErrors.take_profit_pct}>
+                <FormField label="Take Profit %" error={e('take_profit_pct')}>
                   <Input
-                    type="number"
-                    step="0.1"
-                    min="0"
+                    type="number" step="0.1" min="0"
                     {...register('take_profit_pct', { valueAsNumber: true })}
-                    onInput={() => clearErr('take_profit_pct')}
                     placeholder="2.0"
                   />
                 </FormField>
               </div>
 
               {tpType === 'trailing' && (
-                <FormField label="Trailing Deviation %" error={fieldErrors.trailing_deviation_pct}>
+                <FormField label="Trailing Deviation %" error={e('trailing_deviation_pct')}>
                   <Input
-                    type="number"
-                    step="0.1"
-                    min="0"
+                    type="number" step="0.1" min="0"
                     {...register('trailing_deviation_pct', { valueAsNumber: true })}
-                    onInput={() => clearErr('trailing_deviation_pct')}
                     placeholder="0.5"
                   />
                 </FormField>
@@ -372,13 +313,10 @@ export default function CreateBotPage() {
                   <input type="checkbox" id="sl_enabled" {...register('stop_loss_enabled')} className="w-4 h-4 accent-primary" />
                   <label htmlFor="sl_enabled" className="text-sm font-medium">Stop Loss Aktif</label>
                 </div>
-
                 {stopLossEnabled && (
                   <FormField label="Stop Loss %">
                     <Input
-                      type="number"
-                      step="0.1"
-                      min="0"
+                      type="number" step="0.1" min="0"
                       {...register('stop_loss_pct', { valueAsNumber: true })}
                       placeholder="5.0"
                     />
@@ -388,7 +326,7 @@ export default function CreateBotPage() {
             </div>
           )}
 
-          {/* Step 4: Advanced */}
+          {/* Step 4 – Advanced */}
           {step === 4 && (
             <div className="space-y-4">
               <FormField label="Sinyal Kaynağı">
