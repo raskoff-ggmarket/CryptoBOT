@@ -60,16 +60,16 @@ async def _tick_bot(bot_id: int):
         # Get current price
         try:
             if bot.is_paper:
-                client = None
-                # For paper trading, use a read-only client for price data
                 if bot.exchange_key:
                     api_key = decrypt_api_key(bot.exchange_key.api_key_enc)
                     api_secret = decrypt_api_key(bot.exchange_key.api_secret_enc)
                     client = BinanceSpotClient(api_key, api_secret)
                 else:
-                    return
+                    # Public client — no auth needed for price data
+                    client = BinanceSpotClient("", "")
             else:
                 if not bot.exchange_key:
+                    logger.warning(f"Bot {bot_id}: live trading bot has no exchange key, skipping")
                     return
                 api_key = decrypt_api_key(bot.exchange_key.api_key_enc)
                 api_secret = decrypt_api_key(bot.exchange_key.api_secret_enc)

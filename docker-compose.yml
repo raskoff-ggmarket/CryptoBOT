@@ -65,7 +65,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: cryptobot_celery
-    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=4
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=4 -Q bots,backtests,risk,default,celery
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-cryptobot}:${POSTGRES_PASSWORD:-cryptobot123}@postgres:5432/${POSTGRES_DB:-cryptobot}
       - REDIS_URL=redis://redis:6379/0
