@@ -6,6 +6,7 @@ import { useAuthStore } from '@/store/authStore'
 import AppShell from '@/components/layout/AppShell'
 import LoadingSpinner from '@/components/common/LoadingSpinner'
 
+const LandingPage = lazy(() => import('@/pages/Landing'))
 const LoginPage = lazy(() => import('@/pages/Login'))
 const RegisterPage = lazy(() => import('@/pages/Register'))
 const DashboardPage = lazy(() => import('@/pages/Dashboard'))
@@ -44,6 +45,7 @@ export default function App() {
       <BrowserRouter>
         <Suspense fallback={<LoadingSpinner fullScreen />}>
           <Routes>
+            <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
             <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
 
@@ -52,7 +54,6 @@ export default function App() {
                 <AppShell />
               </ProtectedRoute>
             }>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/bots" element={<BotsPage />} />
               <Route path="/bots/new" element={<CreateBotPage />} />
