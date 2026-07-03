@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.security import encrypt_api_key, decrypt_api_key
@@ -9,6 +9,7 @@ from app.models.exchange_key import ExchangeKey
 from app.schemas.exchange_key import ExchangeKeyCreate, ExchangeKeyRead, ExchangeKeyUpdate, AccountBalances, BalanceItem
 from app.schemas.common import success_response
 from app.services.binance_client import BinanceSpotClient
+from app.core.plans import get_limits
 from datetime import datetime, timezone
 
 router = APIRouter(prefix="/exchange-keys", tags=["Exchange Keys"])
@@ -37,6 +38,17 @@ async def create_key(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    limits = get_limits(current_user.plan)
+    if limits["max_exchange_keys"] is not None:
+        count_result = await db.execute(
+            select(func.count(ExchangeKey.id)).where(ExchangeKey.user_id == current_user.id)
+        )
+        if (count_result.scalar() or 0) >= limits["max_exchange_keys"]:
+            raise HTTPException(
+                status_code=403,
+                detail="Free plan allows only 1 exchange key. Upgrade to Pro for more.",
+            )
+
     key = ExchangeKey(
         user_id=current_user.id,
         label=data.label,

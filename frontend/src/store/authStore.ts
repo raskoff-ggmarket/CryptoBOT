@@ -6,6 +6,7 @@ interface User {
   email: string
   username: string
   language: string
+  plan?: string
 }
 
 interface AuthStore {

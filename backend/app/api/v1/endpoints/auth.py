@@ -11,6 +11,7 @@ from app.models.risk_profile import RiskProfile
 from app.schemas.auth import RegisterRequest, LoginRequest, TokenResponse, RefreshRequest
 from app.schemas.common import success_response, error_response
 from app.core.config import settings
+from app.core.plans import PLAN_PRO, plan_for_email, pro_emails
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -27,6 +28,7 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
         email=data.email,
         username=data.username,
         hashed_password=get_password_hash(data.password),
+        plan=plan_for_email(data.email),
     )
     db.add(user)
     await db.flush()
@@ -49,6 +51,11 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account disabled")
 
+    # PRO_EMAILS listesindeki mevcut hesaplar girişte otomatik yükseltilir
+    if user.plan != PLAN_PRO and user.email.lower() in pro_emails():
+        user.plan = PLAN_PRO
+        await db.commit()
+
     access_token = create_access_token({"sub": str(user.id)})
     refresh_token = create_refresh_token({"sub": str(user.id)})
 
@@ -62,6 +69,7 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
             "email": user.email,
             "username": user.username,
             "language": user.language,
+            "plan": user.plan,
         }
     })
 

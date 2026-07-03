@@ -9,6 +9,7 @@ from app.models.backtest_run import BacktestRun
 from app.models.backtest_result import BacktestResult
 from app.schemas.backtest import BacktestCreate, BacktestRunRead, BacktestResultRead
 from app.schemas.common import success_response, paginated_response
+from app.core.plans import require_feature
 
 router = APIRouter(prefix="/backtesting", tags=["Backtesting"])
 
@@ -19,6 +20,8 @@ async def create_run(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    require_feature(current_user, "backtesting")
+
     bot_config = data.bot_config or {}
 
     if data.bot_id:

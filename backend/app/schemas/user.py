@@ -9,6 +9,7 @@ class UserRead(BaseModel):
     username: str
     is_active: bool
     is_verified: bool
+    plan: str
     language: str
     timezone: str
     created_at: datetime

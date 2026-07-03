@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import MetaData
+from sqlalchemy import MetaData, text
 from app.core.config import settings
 
 NAMING_CONVENTION = {
@@ -50,3 +50,7 @@ async def get_db() -> AsyncSession:
 async def create_tables():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # create_all mevcut tabloya kolon eklemez; eski kurulumlar için
+        await conn.execute(text(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS plan VARCHAR(20) NOT NULL DEFAULT 'free'"
+        ))

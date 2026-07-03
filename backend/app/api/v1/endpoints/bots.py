@@ -14,6 +14,7 @@ from app.schemas.common import success_response, paginated_response
 from app.services.dca_engine import dca_engine
 from app.services.binance_client import BinanceSpotClient
 from app.core.security import decrypt_api_key
+from app.core.plans import get_limits, require_feature
 from decimal import Decimal
 
 router = APIRouter(prefix="/bots", tags=["Bots"])
@@ -59,6 +60,19 @@ async def create_bot(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    limits = get_limits(current_user.plan)
+    if limits["max_bots"] is not None:
+        count_result = await db.execute(
+            select(func.count(Bot.id)).where(Bot.user_id == current_user.id)
+        )
+        if (count_result.scalar() or 0) >= limits["max_bots"]:
+            raise HTTPException(
+                status_code=403,
+                detail="Free plan allows only 1 bot. Upgrade to Pro for unlimited bots.",
+            )
+    if data.start_condition == "webhook":
+        require_feature(current_user, "webhooks")
+
     if data.exchange_key_id:
         ek = await db.execute(
             select(ExchangeKey).where(

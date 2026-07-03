@@ -38,6 +38,11 @@ export default function Topbar() {
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-accent/50">
           <User className="w-4 h-4 text-muted-foreground" />
           <span className="text-sm font-medium">{user?.username}</span>
+          {user?.plan === 'pro' && (
+            <span className="text-[10px] font-bold uppercase tracking-wider bg-primary text-primary-foreground px-1.5 py-0.5 rounded">
+              Pro
+            </span>
+          )}
         </div>
 
         <button

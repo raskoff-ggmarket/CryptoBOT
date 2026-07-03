@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     WS_HEARTBEAT_INTERVAL: int = 30
     WS_MAX_CONNECTIONS: int = 1000
 
+    # Plans: bu e-postalar ücretsiz Pro alır (virgülle ayrılmış)
+    PRO_EMAILS: str = "raskoff.invest@gmail.com"
+
     # Bot settings
     MAX_BOTS_PER_USER: int = 20
     BOT_CHECK_INTERVAL_SECONDS: int = 5

@@ -13,6 +13,7 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    plan: Mapped[str] = mapped_column(String(20), default="free", server_default="free")
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     language: Mapped[str] = mapped_column(String(5), default="tr")
     timezone: Mapped[str] = mapped_column(String(50), default="Europe/Istanbul")
