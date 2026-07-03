@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     # Plans: bu e-postalar ücretsiz Pro alır (virgülle ayrılmış)
     PRO_EMAILS: str = "raskoff.invest@gmail.com"
 
+    # Initial user: doluysa ilk açılışta bu hesap otomatik oluşturulur
+    INITIAL_USER_EMAIL: Optional[str] = None
+    INITIAL_USER_USERNAME: Optional[str] = None
+    INITIAL_USER_PASSWORD: Optional[str] = None
+
     # Bot settings
     MAX_BOTS_PER_USER: int = 20
     BOT_CHECK_INTERVAL_SECONDS: int = 5

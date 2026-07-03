@@ -5,6 +5,7 @@ import json
 import logging
 
 from app.core.config import settings
+from app.core.bootstrap import seed_initial_user
 from app.core.database import create_tables
 from app.core.security import decode_token
 from app.api.v1.router import api_router
@@ -19,6 +20,7 @@ async def lifespan(app: FastAPI):
     logger.info("Starting CryptoBOT...")
     await create_tables()
     logger.info("Database tables created/verified")
+    await seed_initial_user()
     yield
     logger.info("Shutting down CryptoBOT...")
 

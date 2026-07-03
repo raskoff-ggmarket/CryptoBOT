@@ -47,6 +47,9 @@ services:
       - SECRET_KEY=${SECRET_KEY:-supersecretkey123changeme}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - ENVIRONMENT=${ENVIRONMENT:-production}
+      - INITIAL_USER_EMAIL=${INITIAL_USER_EMAIL:-}
+      - INITIAL_USER_USERNAME=${INITIAL_USER_USERNAME:-}
+      - INITIAL_USER_PASSWORD=${INITIAL_USER_PASSWORD:-}
     ports:
       - "8000:8000"
     depends_on:
