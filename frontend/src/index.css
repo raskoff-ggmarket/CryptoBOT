@@ -51,3 +51,28 @@
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
+
+/* Landing animations */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes float-y {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+@keyframes ticker-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.animate-fade-up { animation: fade-up 0.7s ease-out both; }
+.animate-fade-up-1 { animation: fade-up 0.7s ease-out 0.1s both; }
+.animate-fade-up-2 { animation: fade-up 0.7s ease-out 0.2s both; }
+.animate-fade-up-3 { animation: fade-up 0.7s ease-out 0.3s both; }
+.animate-float { animation: float-y 4s ease-in-out infinite; }
+.animate-ticker { animation: ticker-scroll 40s linear infinite; }
+.animate-ticker:hover { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up, .animate-fade-up-1, .animate-fade-up-2, .animate-fade-up-3,
+  .animate-float, .animate-ticker { animation: none; }
+}

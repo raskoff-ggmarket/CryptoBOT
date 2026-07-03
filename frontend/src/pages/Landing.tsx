@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuthStore } from '@/store/authStore'
 import {
@@ -226,6 +226,66 @@ const TESTIMONIALS = [
 /* Small pieces                                                        */
 /* ------------------------------------------------------------------ */
 
+interface TickerRow {
+  symbol: string
+  price: number
+  changePct: number
+}
+
+const TICKER_SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT']
+
+function PriceTicker() {
+  const [rows, setRows] = useState<TickerRow[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        const res = await fetch(
+          `https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(JSON.stringify(TICKER_SYMBOLS))}`
+        )
+        if (!res.ok) return
+        const data = await res.json()
+        if (!cancelled && Array.isArray(data)) {
+          setRows(
+            data.map((d: any) => ({
+              symbol: d.symbol.replace('USDT', ''),
+              price: parseFloat(d.lastPrice),
+              changePct: parseFloat(d.priceChangePercent),
+            }))
+          )
+        }
+      } catch {
+        /* canlı veri yoksa şerit gizli kalır */
+      }
+    }
+    load()
+    const t = window.setInterval(load, 30_000)
+    return () => { cancelled = true; window.clearInterval(t) }
+  }, [])
+
+  if (rows.length === 0) return null
+
+  const items = [...rows, ...rows] // kesintisiz kaydırma için ikiye katla
+  return (
+    <div className="border-b border-border bg-card/60 overflow-hidden">
+      <div className="flex w-max animate-ticker py-2">
+        {items.map((r, i) => (
+          <div key={i} className="flex items-center gap-2 px-6 text-sm whitespace-nowrap">
+            <span className="font-semibold">{r.symbol}</span>
+            <span className="tabular-nums text-muted-foreground">
+              ${r.price >= 100 ? r.price.toLocaleString(undefined, { maximumFractionDigits: 0 }) : r.price.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+            </span>
+            <span className={`tabular-nums text-xs font-medium ${r.changePct >= 0 ? 'text-profit' : 'text-loss'}`}>
+              {r.changePct >= 0 ? '▲' : '▼'} %{Math.abs(r.changePct).toFixed(2)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function Sparkline() {
   return (
     <svg viewBox="0 0 320 96" className="w-full h-24" preserveAspectRatio="none">
@@ -297,7 +357,7 @@ function HeroMockup() {
           ))}
         </div>
       </div>
-      <div className="absolute -right-4 -bottom-5 bg-card border border-border rounded-xl px-4 py-3 shadow-xl flex items-center gap-3">
+      <div className="absolute -right-4 -bottom-5 bg-card border border-border rounded-xl px-4 py-3 shadow-xl flex items-center gap-3 animate-float">
         <div className="w-9 h-9 rounded-lg bg-profit/15 flex items-center justify-center">
           <TrendingUp className="w-4 h-4 text-profit" />
         </div>
@@ -427,6 +487,9 @@ export default function LandingPage() {
         )}
       </header>
 
+      {/* Canlı fiyat şeridi */}
+      <PriceTicker />
+
       {/* Hero */}
       <section className="relative overflow-hidden">
         <div
@@ -439,7 +502,7 @@ export default function LandingPage() {
         />
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 pb-24 lg:pt-24">
           <div className="grid lg:grid-cols-2 gap-16 items-center">
-            <div>
+            <div className="animate-fade-up">
               <div className="inline-flex items-center gap-2 border border-border bg-card rounded-full px-4 py-1.5 text-sm text-muted-foreground mb-6">
                 <span className="w-2 h-2 rounded-full bg-profit animate-pulse" />
                 7/24 çalışan otomatik ticaret botları
@@ -477,7 +540,9 @@ export default function LandingPage() {
                 ))}
               </div>
             </div>
-            <HeroMockup />
+            <div className="animate-fade-up-2">
+              <HeroMockup />
+            </div>
           </div>
         </div>
       </section>
