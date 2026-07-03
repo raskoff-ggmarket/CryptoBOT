@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { botsApi } from '@/services/api'
 import { toast } from 'sonner'
 import LoadingSpinner from '@/components/common/LoadingSpinner'
-import { Plus, Play, Pause, Square, Copy, Trash2, TrendingUp, Bot } from 'lucide-react'
+import { Plus, Play, Pause, Square, Copy, Trash2, TrendingUp, Bot, Grid3X3 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { formatCurrency } from '@/utils/formatters'
 
@@ -66,12 +66,20 @@ export default function BotsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">{t('bots.title')}</h1>
-        <Link to="/bots/new"
-          className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity font-medium text-sm"
-        >
-          <Plus className="w-4 h-4" />
-          {t('bots.create')}
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link to="/bots/new-grid"
+            className="flex items-center gap-2 px-4 py-2 border border-border bg-card rounded-lg hover:bg-accent transition-colors font-medium text-sm"
+          >
+            <Grid3X3 className="w-4 h-4" />
+            Grid Bot
+          </Link>
+          <Link to="/bots/new"
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity font-medium text-sm"
+          >
+            <Plus className="w-4 h-4" />
+            {t('bots.create')}
+          </Link>
+        </div>
       </div>
 
       {isLoading ? (
@@ -97,6 +105,14 @@ export default function BotsPage() {
                     <Link to={`/bots/${bot.id}`} className="font-semibold text-foreground hover:text-primary">
                       {bot.name}
                     </Link>
+                    <span className={cn(
+                      'text-xs px-1.5 py-0.5 rounded border font-medium',
+                      bot.bot_type === 'grid'
+                        ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                        : 'bg-primary/10 text-primary border-primary/20'
+                    )}>
+                      {bot.bot_type === 'grid' ? 'GRID' : 'DCA'}
+                    </span>
                     {bot.is_paper && (
                       <span className="text-xs px-1.5 py-0.5 bg-blue-500/10 text-blue-400 rounded border border-blue-500/20">Paper</span>
                     )}
@@ -107,20 +123,39 @@ export default function BotsPage() {
               </div>
 
               {/* Metrics */}
-              <div className="grid grid-cols-3 gap-3 mb-4 text-sm">
-                <div>
-                  <div className="text-muted-foreground text-xs">Base Order</div>
-                  <div className="font-medium tabular-nums">{formatCurrency(bot.base_order_size)}</div>
+              {bot.bot_type === 'grid' ? (
+                <div className="grid grid-cols-3 gap-3 mb-4 text-sm">
+                  <div>
+                    <div className="text-muted-foreground text-xs">Aralık</div>
+                    <div className="font-medium tabular-nums text-xs mt-0.5">
+                      {formatCurrency(bot.grid_lower_price)} – {formatCurrency(bot.grid_upper_price)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground text-xs">Seviye</div>
+                    <div className="font-medium">{bot.grid_levels}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground text-xs">Emir</div>
+                    <div className="font-medium tabular-nums">{formatCurrency(bot.grid_order_size)}</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="text-muted-foreground text-xs">TP</div>
-                  <div className="font-medium text-profit">+{bot.take_profit_pct}%</div>
+              ) : (
+                <div className="grid grid-cols-3 gap-3 mb-4 text-sm">
+                  <div>
+                    <div className="text-muted-foreground text-xs">Base Order</div>
+                    <div className="font-medium tabular-nums">{formatCurrency(bot.base_order_size)}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground text-xs">TP</div>
+                    <div className="font-medium text-profit">+{bot.take_profit_pct}%</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground text-xs">Aktif İşlem</div>
+                    <div className="font-medium">{bot.active_deals_count}</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="text-muted-foreground text-xs">Aktif İşlem</div>
-                  <div className="font-medium">{bot.active_deals_count}</div>
-                </div>
-              </div>
+              )}
 
               {/* Actions */}
               <div className="flex items-center gap-2 pt-3 border-t border-border">

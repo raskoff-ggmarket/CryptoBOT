@@ -44,6 +44,7 @@ class DealRead(BaseModel):
     realized_pnl: Optional[Decimal]
     realized_pnl_pct: Optional[Decimal]
     commission_paid: Decimal
+    grid_state: Optional[str] = None
     opened_at: Optional[datetime]
     closed_at: Optional[datetime]
     created_at: datetime

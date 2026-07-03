@@ -87,7 +87,9 @@ async def _tick_bot(bot_id: int):
         )
         active_deal = active_deal_result.scalar_one_or_none()
 
-        if active_deal:
+        if bot.bot_type == "grid":
+            await _tick_grid_bot(db, bot, active_deal, current_price, client)
+        elif active_deal:
             # Update price and check TP/SL
             active_deal.current_price = current_price
             await _check_deal_conditions(db, bot, active_deal, current_price, client)
@@ -96,6 +98,127 @@ async def _tick_bot(bot_id: int):
             await _try_open_deal(db, bot, current_price, client)
 
         await db.commit()
+
+
+async def _tick_grid_bot(db, bot, deal, current_price: Decimal, client):
+    """Grid botu tek tik: çizgi geçişlerine göre al/sat, durumu deal.grid_state'te tut."""
+    import json
+    from app.models.deal import Deal
+    from app.models.order import Order
+    from app.services.grid_engine import grid_engine
+    from app.services.paper_trading import paper_engine
+    from app.websocket.manager import ws_manager
+
+    if not (bot.grid_lower_price and bot.grid_upper_price and bot.grid_levels and bot.grid_order_size):
+        logger.warning(f"Grid bot {bot.id}: eksik grid parametreleri, atlanıyor")
+        return
+
+    now = datetime.now(timezone.utc)
+
+    # Grid botun tüm ömrü tek bir "deal" kaydında izlenir
+    if not deal:
+        deal = Deal(
+            bot_id=bot.id,
+            user_id=bot.user_id,
+            pair=bot.pair,
+            is_paper=bot.is_paper,
+            status="active",
+            base_order_price=current_price,
+            average_price=None,
+            current_price=current_price,
+            total_base_qty=Decimal("0"),
+            total_quote_spent=Decimal("0"),
+            realized_pnl=Decimal("0"),
+            realized_pnl_pct=Decimal("0"),
+            grid_state=json.dumps({"prev_price": str(current_price), "held": {}}),
+            opened_at=now,
+        )
+        db.add(deal)
+        await db.flush()
+        bot.last_deal_at = now
+        return
+
+    state = json.loads(deal.grid_state or '{"prev_price": null, "held": {}}')
+    prev_price = Decimal(state["prev_price"]) if state.get("prev_price") else None
+    held = {int(k): v for k, v in state.get("held", {}).items()}
+
+    lines = grid_engine.compute_lines(bot.grid_lower_price, bot.grid_upper_price, bot.grid_levels)
+    actions = grid_engine.decide_actions(lines, held, prev_price, current_price, bot.grid_order_size)
+
+    # Satışlar
+    for sell in actions.sells:
+        if bot.is_paper:
+            fill_price = current_price
+        else:
+            try:
+                result = await client.place_market_sell(bot.pair, sell.qty_base)
+                fill_price = Decimal(str(result.get("fills", [{}])[0].get("price", current_price))) if result.get("fills") else current_price
+            except Exception as e:
+                logger.error(f"Grid bot {bot.id}: seviye {sell.level} satışı başarısız: {e}")
+                continue
+
+        pnl, commission = grid_engine.compute_sell_pnl(fill_price, sell.qty_base, sell.cost_quote)
+        held.pop(sell.level, None)
+        deal.total_base_qty = max(Decimal("0"), (deal.total_base_qty or Decimal("0")) - sell.qty_base)
+        deal.total_quote_spent = max(Decimal("0"), (deal.total_quote_spent or Decimal("0")) - sell.cost_quote)
+        deal.realized_pnl = (deal.realized_pnl or Decimal("0")) + pnl
+        deal.commission_paid = (deal.commission_paid or Decimal("0")) + commission
+        bot.deals_completed += 1
+
+        db.add(Order(
+            deal_id=deal.id, bot_id=bot.id, user_id=bot.user_id,
+            type=f"grid_sell_{sell.level}", side="SELL", order_type="MARKET",
+            status="filled", quantity=sell.qty_base, filled_quantity=sell.qty_base,
+            quote_qty=fill_price * sell.qty_base, avg_fill_price=fill_price,
+            commission=commission, is_paper=bot.is_paper, placed_at=now, filled_at=now,
+        ))
+
+    # Alımlar
+    for buy in actions.buys:
+        if bot.is_paper:
+            fill = paper_engine.simulate_market_buy(current_price, buy.size_quote)
+            fill_price = fill["avg_fill_price"]
+        else:
+            try:
+                result = await client.place_market_buy(bot.pair, buy.size_quote)
+                fill_price = Decimal(str(result.get("fills", [{}])[0].get("price", current_price))) if result.get("fills") else current_price
+            except Exception as e:
+                logger.error(f"Grid bot {bot.id}: seviye {buy.level} alımı başarısız: {e}")
+                continue
+
+        pos = grid_engine.apply_buy_fill(fill_price, buy.size_quote)
+        held[buy.level] = pos
+        deal.total_base_qty = (deal.total_base_qty or Decimal("0")) + Decimal(pos["qty"])
+        deal.total_quote_spent = (deal.total_quote_spent or Decimal("0")) + buy.size_quote
+
+        db.add(Order(
+            deal_id=deal.id, bot_id=bot.id, user_id=bot.user_id,
+            type=f"grid_buy_{buy.level}", side="BUY", order_type="MARKET",
+            status="filled", quantity=Decimal(pos["qty"]), filled_quantity=Decimal(pos["qty"]),
+            quote_qty=buy.size_quote, avg_fill_price=fill_price,
+            commission=buy.size_quote * grid_engine.COMMISSION_RATE,
+            is_paper=bot.is_paper, placed_at=now, filled_at=now,
+        ))
+
+    # Durumu güncelle
+    deal.current_price = current_price
+    deal.average_price = (
+        deal.total_quote_spent / deal.total_base_qty
+        if deal.total_base_qty and deal.total_base_qty > 0 else None
+    )
+    deal.grid_state = json.dumps({
+        "prev_price": str(current_price),
+        "held": {str(k): v for k, v in held.items()},
+    })
+
+    if actions.buys or actions.sells:
+        asyncio.create_task(ws_manager.emit_deal_updated(bot.id, {
+            "deal_id": deal.id,
+            "current_price": str(current_price),
+            "grid_buys": len(actions.buys),
+            "grid_sells": len(actions.sells),
+            "realized_pnl": str(deal.realized_pnl or "0"),
+        }))
 
 
 async def _try_open_deal(db, bot, current_price: Decimal, client):

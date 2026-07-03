@@ -20,6 +20,15 @@ class Bot(Base):
     base_asset: Mapped[str] = mapped_column(String(10), nullable=False)
     quote_asset: Mapped[str] = mapped_column(String(10), nullable=False)
 
+    # Bot type: dca | grid
+    bot_type: Mapped[str] = mapped_column(String(20), default="dca", server_default="dca", index=True)
+
+    # Grid (bot_type == "grid")
+    grid_lower_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8), nullable=True)
+    grid_upper_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8), nullable=True)
+    grid_levels: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    grid_order_size: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8), nullable=True)
+
     # Base Order
     base_order_type: Mapped[str] = mapped_column(String(20), default="market")
     base_order_size: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)

@@ -87,6 +87,13 @@ async def create_bot(
     base_asset = pair.replace("USDT", "").replace("BTC", "") if "USDT" in pair else pair[:-3]
     quote_asset = "USDT" if "USDT" in pair else pair[-3:]
 
+    # Grid botlarda DCA kolonları kullanılmaz; NOT NULL kolonlara emniyetli değer yaz
+    is_grid = data.bot_type == "grid"
+    base_order_size = data.grid_order_size if is_grid else data.base_order_size
+    safety_order_size = data.grid_order_size if is_grid else data.safety_order_size
+    safety_order_step_pct = Decimal("1") if is_grid else data.safety_order_step_pct
+    take_profit_pct = Decimal("1") if is_grid else data.take_profit_pct
+
     bot = Bot(
         user_id=current_user.id,
         exchange_key_id=data.exchange_key_id,
@@ -94,15 +101,20 @@ async def create_bot(
         pair=pair,
         base_asset=base_asset,
         quote_asset=quote_asset,
+        bot_type=data.bot_type,
+        grid_lower_price=data.grid_lower_price,
+        grid_upper_price=data.grid_upper_price,
+        grid_levels=data.grid_levels,
+        grid_order_size=data.grid_order_size,
         base_order_type=data.base_order_type,
-        base_order_size=data.base_order_size,
+        base_order_size=base_order_size,
         max_safety_orders=data.max_safety_orders,
-        safety_order_size=data.safety_order_size,
-        safety_order_step_pct=data.safety_order_step_pct,
+        safety_order_size=safety_order_size,
+        safety_order_step_pct=safety_order_step_pct,
         safety_order_volume_scale=data.safety_order_volume_scale,
         safety_order_step_scale=data.safety_order_step_scale,
         take_profit_type=data.take_profit_type,
-        take_profit_pct=data.take_profit_pct,
+        take_profit_pct=take_profit_pct,
         trailing_deviation_pct=data.trailing_deviation_pct,
         stop_loss_enabled=data.stop_loss_enabled,
         stop_loss_type=data.stop_loss_type,

@@ -13,6 +13,7 @@ const DashboardPage = lazy(() => import('@/pages/Dashboard'))
 const BotsPage = lazy(() => import('@/pages/Bots'))
 const BotDetailPage = lazy(() => import('@/pages/BotDetail'))
 const CreateBotPage = lazy(() => import('@/pages/CreateBot'))
+const CreateGridBotPage = lazy(() => import('@/pages/CreateGridBot'))
 const DealsPage = lazy(() => import('@/pages/Deals'))
 const BacktestingPage = lazy(() => import('@/pages/Backtesting'))
 const SettingsPage = lazy(() => import('@/pages/Settings'))
@@ -57,6 +58,7 @@ export default function App() {
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/bots" element={<BotsPage />} />
               <Route path="/bots/new" element={<CreateBotPage />} />
+              <Route path="/bots/new-grid" element={<CreateGridBotPage />} />
               <Route path="/bots/:botId" element={<BotDetailPage />} />
               <Route path="/deals" element={<DealsPage />} />
               <Route path="/backtesting" element={<BacktestingPage />} />

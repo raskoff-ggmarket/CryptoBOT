@@ -1,4 +1,4 @@
-from sqlalchemy import String, Boolean, Integer, Numeric, ForeignKey, DateTime
+from sqlalchemy import String, Boolean, Integer, Numeric, ForeignKey, DateTime, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -34,6 +34,9 @@ class Deal(Base):
     total_quote_spent: Mapped[Decimal] = mapped_column(Numeric(20, 8), default=Decimal("0"))
     safety_orders_placed: Mapped[int] = mapped_column(Integer, default=0)
     safety_orders_filled: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Grid bot durumu (JSON: prev_price + tutulan seviyeler)
+    grid_state: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # P&L
     realized_pnl: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8), nullable=True)

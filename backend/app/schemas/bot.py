@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, List
 from datetime import datetime
 from decimal import Decimal
@@ -19,17 +19,18 @@ class BotCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     exchange_key_id: Optional[int] = None
     pair: str = Field(min_length=3, max_length=20)
+    bot_type: str = Field(default="dca", pattern="^(dca|grid)$")
     base_order_type: str = Field(default="market", pattern="^(market|limit)$")
-    base_order_size: Decimal = Field(gt=0)
+    base_order_size: Optional[Decimal] = Field(None, gt=0)
 
     max_safety_orders: int = Field(default=5, ge=0, le=25)
-    safety_order_size: Decimal = Field(gt=0)
-    safety_order_step_pct: Decimal = Field(gt=0, le=100)
+    safety_order_size: Optional[Decimal] = Field(None, gt=0)
+    safety_order_step_pct: Optional[Decimal] = Field(None, gt=0, le=100)
     safety_order_volume_scale: Decimal = Field(default=Decimal("1.5"), ge=1, le=10)
     safety_order_step_scale: Decimal = Field(default=Decimal("1.0"), ge=1, le=5)
 
     take_profit_type: str = Field(default="fixed", pattern="^(fixed|trailing)$")
-    take_profit_pct: Decimal = Field(gt=0, le=100)
+    take_profit_pct: Optional[Decimal] = Field(None, gt=0, le=100)
     trailing_deviation_pct: Decimal = Field(default=Decimal("0.5"), gt=0, le=10)
 
     stop_loss_enabled: bool = False
@@ -40,6 +41,12 @@ class BotCreate(BaseModel):
     start_condition: str = Field(default="immediately", pattern="^(immediately|indicator|webhook|scheduled)$")
     reinvest_pct: Decimal = Field(default=Decimal("0"), ge=0, le=100)
 
+    # Grid (bot_type == "grid")
+    grid_lower_price: Optional[Decimal] = Field(None, gt=0)
+    grid_upper_price: Optional[Decimal] = Field(None, gt=0)
+    grid_levels: Optional[int] = Field(None, ge=2, le=100)
+    grid_order_size: Optional[Decimal] = Field(None, gt=0)
+
     is_paper: bool = False
     max_deals_count: int = Field(default=0, ge=0)
     cooldown_seconds: int = Field(default=0, ge=0)
@@ -48,6 +55,20 @@ class BotCreate(BaseModel):
     @classmethod
     def upper_pair(cls, v: str) -> str:
         return v.upper()
+
+    @model_validator(mode="after")
+    def validate_type_fields(self):
+        if self.bot_type == "grid":
+            missing = [f for f in ("grid_lower_price", "grid_upper_price", "grid_levels", "grid_order_size") if getattr(self, f) is None]
+            if missing:
+                raise ValueError(f"Grid bot requires: {', '.join(missing)}")
+            if self.grid_upper_price <= self.grid_lower_price:
+                raise ValueError("grid_upper_price must be greater than grid_lower_price")
+        else:
+            missing = [f for f in ("base_order_size", "safety_order_size", "safety_order_step_pct", "take_profit_pct") if getattr(self, f) is None]
+            if missing:
+                raise ValueError(f"DCA bot requires: {', '.join(missing)}")
+        return self
 
 
 class BotUpdate(BaseModel):
@@ -80,6 +101,11 @@ class BotRead(BaseModel):
     pair: str
     base_asset: str
     quote_asset: str
+    bot_type: str = "dca"
+    grid_lower_price: Optional[Decimal] = None
+    grid_upper_price: Optional[Decimal] = None
+    grid_levels: Optional[int] = None
+    grid_order_size: Optional[Decimal] = None
     base_order_type: str
     base_order_size: Decimal
     max_safety_orders: int

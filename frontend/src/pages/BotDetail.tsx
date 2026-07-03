@@ -2,6 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { botsApi, dealsApi } from '@/services/api'
 import LoadingSpinner from '@/components/common/LoadingSpinner'
+import CandleChart, { ChartLevel } from '@/components/common/CandleChart'
 import { formatCurrency, formatPercent, formatDate, isPnlPositive } from '@/utils/formatters'
 import { ArrowLeft, TrendingUp, ArrowDownToLine, Target, Check, Circle, Clock } from 'lucide-react'
 import { cn } from '@/utils/cn'
@@ -122,6 +123,50 @@ export default function BotDetailPage() {
   const pnlAmount = activeDeal && curPrice && avgPrice ? (curPrice - avgPrice) * boughtQty : 0
   const tpDistance = curPrice && tpPrice ? ((tpPrice - curPrice) / curPrice) * 100 : 0
 
+  // Grid bot: seviye çizgileri ve tutulan pozisyonlar
+  const isGrid = bot.bot_type === 'grid'
+  const gridLower = num(bot.grid_lower_price)
+  const gridUpper = num(bot.grid_upper_price)
+  const gridLevelCount = bot.grid_levels || 0
+  const gridLines: number[] =
+    isGrid && gridLevelCount >= 2 && gridUpper > gridLower
+      ? Array.from({ length: gridLevelCount }, (_, i) => gridLower + ((gridUpper - gridLower) / (gridLevelCount - 1)) * i)
+      : []
+  let heldLevels: Record<number, { qty: number; cost: number }> = {}
+  if (isGrid && activeDeal?.grid_state) {
+    try {
+      const gs = JSON.parse(activeDeal.grid_state)
+      heldLevels = Object.fromEntries(
+        Object.entries(gs.held || {}).map(([k, v]: [string, any]) => [Number(k), { qty: num(v.qty), cost: num(v.cost) }])
+      )
+    } catch { /* bozuk state görmezden gel */ }
+  }
+  const gridRealized = activeDeal ? num(activeDeal.realized_pnl) : 0
+
+  // Grafik seviye çizgileri: DCA'da ort. maliyet + TP + SO'lar; grid'de ızgara çizgileri
+  const chartLevels: ChartLevel[] = isGrid
+    ? gridLines.map((p, i) => ({
+        price: p,
+        color: i in heldLevels ? '#22c55e' : i === 0 || i === gridLines.length - 1 ? '#3b82f6' : '#f59e0b',
+        title: i in heldLevels ? '● tutuluyor' : '',
+        dashed: !(i in heldLevels),
+      }))
+    : activeDeal
+    ? [
+        { price: avgPrice, color: '#3b82f6', title: 'Ort. maliyet' },
+        { price: tpPrice, color: '#22c55e', title: 'TP hedefi' },
+        ...ladder
+          .filter((r) => r.kind === 'so' && r.status !== 'filled')
+          .slice(0, 5)
+          .map((r) => ({
+            price: r.price,
+            color: '#f59e0b',
+            title: `SO ${r.num}`,
+            dashed: true,
+          })),
+      ]
+    : []
+
   return (
     <div className="space-y-5 max-w-6xl mx-auto pb-10">
       {/* ── Header ── */}
@@ -150,8 +195,95 @@ export default function BotDetailPage() {
         </span>
       </div>
 
+      {/* ── Candlestick chart ── */}
+      <CandleChart pair={pair} levels={chartLevels} />
+
+      {/* ── Grid panel ── */}
+      {isGrid && (
+        <div className="bg-card border border-border rounded-2xl overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-5 border-b border-border bg-gradient-to-r from-card to-accent/20">
+            <div>
+              <div className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Gerçekleşen Grid Kârı</div>
+              <div className={cn('text-3xl font-bold tabular-nums', gridRealized >= 0 ? 'text-profit' : 'text-loss')}>
+                {gridRealized >= 0 ? '+' : ''}{formatCurrency(gridRealized)}
+              </div>
+              <div className="text-sm text-muted-foreground mt-0.5">
+                {bot.deals_completed} tamamlanan grid turu
+              </div>
+            </div>
+            <div className="text-sm text-right">
+              <div className="text-muted-foreground">
+                Aralık: <span className="font-mono text-foreground">{formatCurrency(gridLower, 2)} – {formatCurrency(gridUpper, 2)}</span>
+              </div>
+              <div className="text-muted-foreground mt-1">
+                {gridLevelCount} seviye · emir {formatCurrency(num(bot.grid_order_size))}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-border border-b border-border">
+            {[
+              ['Tutulan Seviye', `${Object.keys(heldLevels).length} / ${Math.max(gridLevelCount - 1, 0)}`],
+              ['Pozisyon', `${boughtQty.toFixed(6)} ${base}`],
+              ['Maliyet', formatCurrency(boughtVol)],
+              ['Güncel Fiyat', formatCurrency(curPrice, 4)],
+            ].map(([label, value], i) => (
+              <div key={i} className="px-5 py-3">
+                <div className="text-[11px] text-muted-foreground uppercase tracking-wide">{label}</div>
+                <div className="font-semibold tabular-nums mt-0.5">{value}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Grid seviyeleri */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[11px] text-muted-foreground uppercase tracking-wide border-b border-border">
+                  <th className="text-left font-medium px-6 py-2.5">Seviye</th>
+                  <th className="text-right font-medium px-3 py-2.5">Fiyat</th>
+                  <th className="text-right font-medium px-3 py-2.5">Durum</th>
+                  <th className="text-right font-medium px-3 py-2.5">Miktar</th>
+                  <th className="text-right font-medium px-6 py-2.5">Satış Hedefi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...gridLines].map((price, i) => ({ price, i })).reverse().map(({ price, i }) => {
+                  const held = heldLevels[i]
+                  const isTop = i === gridLines.length - 1
+                  return (
+                    <tr key={i} className={cn(
+                      'border-b border-border/50',
+                      held ? 'bg-profit/[0.05]' : curPrice && Math.abs(price - curPrice) / price < 0.005 ? 'bg-primary/[0.06]' : ''
+                    )}>
+                      <td className="px-6 py-2">#{i + 1}{isTop && <span className="text-xs text-muted-foreground ml-1.5">(üst)</span>}</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums">{formatCurrency(price, 4)}</td>
+                      <td className="px-3 py-2 text-right">
+                        {held ? (
+                          <span className="text-xs font-medium text-profit">● Tutuluyor</span>
+                        ) : isTop ? (
+                          <span className="text-xs text-muted-foreground/50">—</span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Bekliyor</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums text-xs">
+                        {held ? `${held.qty.toFixed(6)} ${base}` : '—'}
+                      </td>
+                      <td className="px-6 py-2 text-right font-mono tabular-nums text-xs">
+                        {held && i + 1 < gridLines.length ? formatCurrency(gridLines[i + 1], 4) : '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* ── Active deal panel (3commas style) ── */}
-      {activeDeal ? (
+      {!isGrid && activeDeal ? (
         <div className="bg-card border border-border rounded-2xl overflow-hidden">
           {/* PnL banner */}
           <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-5 border-b border-border bg-gradient-to-r from-card to-accent/20">
@@ -274,7 +406,7 @@ export default function BotDetailPage() {
             <span>Toplam: {formatCurrency(boughtVol)} • {boughtQty.toFixed(6)} {base}</span>
           </div>
         </div>
-      ) : (
+      ) : !isGrid ? (
         <div className="bg-card border border-border rounded-2xl p-10 text-center">
           <Clock className="w-10 h-10 mx-auto mb-3 text-muted-foreground/30" />
           <p className="text-muted-foreground">Açık işlem yok</p>
@@ -282,7 +414,7 @@ export default function BotDetailPage() {
             {bot.status === 'active' ? 'Bot sinyal bekliyor...' : 'Botu başlatın'}
           </p>
         </div>
-      )}
+      ) : null}
 
       {/* ── Stats + config row ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

@@ -51,6 +51,13 @@ async def create_tables():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         # create_all mevcut tabloya kolon eklemez; eski kurulumlar için
-        await conn.execute(text(
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS plan VARCHAR(20) NOT NULL DEFAULT 'free'"
-        ))
+        for stmt in (
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS plan VARCHAR(20) NOT NULL DEFAULT 'free'",
+            "ALTER TABLE bots ADD COLUMN IF NOT EXISTS bot_type VARCHAR(20) NOT NULL DEFAULT 'dca'",
+            "ALTER TABLE bots ADD COLUMN IF NOT EXISTS grid_lower_price NUMERIC(20, 8)",
+            "ALTER TABLE bots ADD COLUMN IF NOT EXISTS grid_upper_price NUMERIC(20, 8)",
+            "ALTER TABLE bots ADD COLUMN IF NOT EXISTS grid_levels INTEGER",
+            "ALTER TABLE bots ADD COLUMN IF NOT EXISTS grid_order_size NUMERIC(20, 8)",
+            "ALTER TABLE deals ADD COLUMN IF NOT EXISTS grid_state TEXT",
+        ):
+            await conn.execute(text(stmt))
