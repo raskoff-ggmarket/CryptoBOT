@@ -42,7 +42,7 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
         <Suspense fallback={<LoadingSpinner fullScreen />}>
           <Routes>
             <Route path="/" element={<LandingPage />} />
